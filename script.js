@@ -15,11 +15,14 @@ function switchTab(tabId) {
 
 window.addEventListener('resize', resizeAllBoards);
 
-// YAHAN APNA HUGGING FACE LINK DAALNA HAI
+// TUMHARA HUGGING FACE BACKEND LINK
 const API_URL = 'https://stackbyujjwal1-stackchess.hf.space/calculate_move';
 const WS_URL = 'wss://stackbyujjwal1-stackchess.hf.space/ws/';
 
 const PIECE_THEME = 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png';
+
+// GHOST CLICK PREVENTER (Mobile double tap fix)
+window.lastTouch = 0;
 
 function clearAllHighlights() {
     $('.square-55d63').removeClass('highlight-blue highlight-red highlight-path');
@@ -70,14 +73,20 @@ var aConfig = {
 aBoard = Chessboard('analyzerBoard', aConfig);
 
 $('#analyzerBoard').on('mousedown touchstart', '.square-55d63', function(e) {
+    if (e.type === 'mousedown' && (Date.now() - window.lastTouch < 500)) return;
+    if (e.type === 'touchstart') window.lastTouch = Date.now();
+
     let sq = $(this).attr('data-square');
 
     if (aSelectedSq && aSelectedSq !== sq) {
-        aBoard.move(aSelectedSq + '-' + sq);
-        handleManualCastling(aSelectedSq, sq, aBoard.position()[sq]);
-        toggleTurn(); updateFenUI();
-        clearAllHighlights(); aSelectedSq = null;
-        return;
+        // BUG FIX: White goti sirf tabhi hilegi jab us square par Valid 'Dot' (highlight-path) ho
+        if ($(this).hasClass('highlight-path')) {
+            aBoard.move(aSelectedSq + '-' + sq);
+            handleManualCastling(aSelectedSq, sq, aBoard.position()[sq]);
+            toggleTurn(); updateFenUI();
+            clearAllHighlights(); aSelectedSq = null;
+            return;
+        }
     }
 
     clearAllHighlights(); aSelectedSq = null;
@@ -191,6 +200,9 @@ var pConfig = { draggable: true, position: 'start', pieceTheme: PIECE_THEME, onD
 pBoard = Chessboard('playBoard', pConfig);
 
 $('#playBoard').on('mousedown touchstart', '.square-55d63', async function(e) {
+    if (e.type === 'mousedown' && (Date.now() - window.lastTouch < 500)) return;
+    if (e.type === 'touchstart') window.lastTouch = Date.now();
+
     if (pGame.game_over() || pGame.turn() === 'b') return; 
     let sq = $(this).attr('data-square');
     
@@ -274,6 +286,9 @@ var mConfig = {
 mBoard = Chessboard('multiBoard', mConfig);
 
 $('#multiBoard').on('mousedown touchstart', '.square-55d63', function(e) {
+    if (e.type === 'mousedown' && (Date.now() - window.lastTouch < 500)) return;
+    if (e.type === 'touchstart') window.lastTouch = Date.now();
+
     if (!roomActive || mGame.game_over() || mGame.turn() !== myPlayerColor) return;
     let sq = $(this).attr('data-square');
     
@@ -365,7 +380,6 @@ function resignGame(mode) {
     
     if (mode === 'ai') {
         document.getElementById('gameStatus').innerText = "You Resigned. AI Wins!";
-        // FIX: pGame.set_fen galti se code ko crash kar raha tha, ab pGame.clear() aur pBoard.clear() use hoga
         pGame.clear(); 
         pBoard.clear(); 
     } else if (mode === 'multi') {
