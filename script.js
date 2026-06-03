@@ -15,8 +15,9 @@ function switchTab(tabId) {
 
 window.addEventListener('resize', resizeAllBoards);
 
-const API_URL = 'https://stackchess-api.onrender.com/calculate_move';
-const WS_URL = 'wss://stackchess-api.onrender.com/ws/';
+// YAHAN APNA HUGGING FACE LINK DAALNA HAI
+const API_URL = 'https://TUMHARA_USERNAME-chess-backend.hf.space/calculate_move';
+const WS_URL = 'wss://TUMHARA_USERNAME-chess-backend.hf.space/ws/'; 
 
 const PIECE_THEME = 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png';
 
@@ -68,7 +69,6 @@ var aConfig = {
 };
 aBoard = Chessboard('analyzerBoard', aConfig);
 
-// Tap-to-Move FIX for Analyzer (Uses mousedown instead of click to bypass drag block)
 $('#analyzerBoard').on('mousedown touchstart', '.square-55d63', function(e) {
     let sq = $(this).attr('data-square');
 
@@ -190,7 +190,6 @@ function pOnSnapEnd () { pBoard.position(pGame.fen()); }
 var pConfig = { draggable: true, position: 'start', pieceTheme: PIECE_THEME, onDragStart: pOnDragStart, onDrop: pOnDrop, onSnapEnd: pOnSnapEnd };
 pBoard = Chessboard('playBoard', pConfig);
 
-// Tap-to-Move FIX for AI Mode
 $('#playBoard').on('mousedown touchstart', '.square-55d63', async function(e) {
     if (pGame.game_over() || pGame.turn() === 'b') return; 
     let sq = $(this).attr('data-square');
@@ -274,7 +273,6 @@ var mConfig = {
 };
 mBoard = Chessboard('multiBoard', mConfig);
 
-// Tap-to-Move FIX for Multiplayer
 $('#multiBoard').on('mousedown touchstart', '.square-55d63', function(e) {
     if (!roomActive || mGame.game_over() || mGame.turn() !== myPlayerColor) return;
     let sq = $(this).attr('data-square');
@@ -367,8 +365,9 @@ function resignGame(mode) {
     
     if (mode === 'ai') {
         document.getElementById('gameStatus').innerText = "You Resigned. AI Wins!";
-        pGame.clear(); // Fixed bug here
-        pBoard.clear(); // Fixed bug here
+        // FIX: pGame.set_fen galti se code ko crash kar raha tha, ab pGame.clear() aur pBoard.clear() use hoga
+        pGame.clear(); 
+        pBoard.clear(); 
     } else if (mode === 'multi') {
         if (socket && roomActive) {
             socket.send(JSON.stringify({ type: "resign" }));
