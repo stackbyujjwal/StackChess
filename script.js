@@ -11,29 +11,101 @@ function switchTab(tabId) {
     event.target.classList.add('active');
     document.getElementById(tabId + '-view').classList.add('active-view');
     resizeAllBoards();
+    cancelPromotion(); // Hide active popup if tab changes
 }
 
-window.addEventListener('resize', resizeAllBoards);
+window.addEventListener('resize', () => { resizeAllBoards(); cancelPromotion(); });
 
-// TUMHARA HUGGING FACE BACKEND LINK
 const API_URL = 'https://stackbyujjwal1-stackchess.hf.space/calculate_move';
 const WS_URL = 'wss://stackbyujjwal1-stackchess.hf.space/ws/';
-
 const PIECE_THEME = 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png';
-
-// GHOST CLICK PREVENTER (Mobile double tap fix)
 window.lastTouch = 0;
 
-function clearAllHighlights() {
-    $('.square-55d63').removeClass('highlight-blue highlight-red highlight-path');
-}
+function clearAllHighlights() { $('.square-55d63').removeClass('highlight-blue highlight-red highlight-path'); }
 
 function copyPGN(gameInstance) {
     let pgn = gameInstance.pgn();
     if (!pgn) { alert("No moves to copy yet!"); return; }
-    navigator.clipboard.writeText(pgn).then(() => {
-        alert("PGN Copied to clipboard! Paste it anywhere.");
-    });
+    navigator.clipboard.writeText(pgn).then(() => { alert("PGN Copied to clipboard! Paste it anywhere."); });
+}
+
+// ==========================================
+// VISUAL PAWN PROMOTION LOGIC (INLINE FIX)
+// ==========================================
+var pendingPromoMove = null;
+
+function showPromotionPopup(source, target, mode, turn) {
+    pendingPromoMove = { source, target, mode, turn };
+    let color = turn === 'w' ? 'w' : 'b';
+    
+    // FIX: Chessboardjs piece names require uppercase (wQ.png, not wq.png)
+    document.getElementById('promo-q').src = `https://chessboardjs.com/img/chesspieces/wikipedia/${color}Q.png`;
+    document.getElementById('promo-r').src = `https://chessboardjs.com/img/chesspieces/wikipedia/${color}R.png`;
+    document.getElementById('promo-b').src = `https://chessboardjs.com/img/chesspieces/wikipedia/${color}B.png`;
+    document.getElementById('promo-n').src = `https://chessboardjs.com/img/chesspieces/wikipedia/${color}N.png`;
+
+    let boardId = mode === 'analyzer' ? '#analyzerBoard' : (mode === 'ai' ? '#playBoard' : '#multiBoard');
+    let squareEl = $(`${boardId} .square-${target}`);
+    
+    if (squareEl.length) {
+        let popup = $('#promoPopup');
+        let sqOffset = squareEl.offset();
+        let sqWidth = squareEl.width();
+        
+        let rank = target.charAt(1);
+        let topPos = sqOffset.top;
+        
+        // If black promotes (row 1), shift the popup up so it doesn't fall off the board
+        if (rank === '1') topPos = sqOffset.top - (sqWidth * 3);
+
+        popup.css({
+            display: 'flex',
+            top: topPos + 'px',
+            left: sqOffset.left + 'px',
+            width: sqWidth + 'px'
+        });
+    }
+}
+
+function cancelPromotion() {
+    $('#promoPopup').css('display', 'none');
+    pendingPromoMove = null;
+    if (aBoard) { updateFenUI(); aBoard.position(aBoard.position()); }
+    if (pBoard) pBoard.position(pGame.fen());
+    if (mBoard) mBoard.position(mGame.fen());
+}
+
+async function executePromotion(piece) {
+    $('#promoPopup').css('display', 'none');
+    if (!pendingPromoMove) return;
+
+    let { source, target, mode, turn } = pendingPromoMove;
+    pendingPromoMove = null;
+
+    if (mode === 'analyzer') {
+        let color = turn === 'w' ? 'w' : 'b';
+        let promoPieceCode = color + piece.toUpperCase();
+        let pos = aBoard.position();
+        delete pos[source];
+        pos[target] = promoPieceCode;
+        aBoard.position(pos, false);
+        toggleTurn();
+        updateFenUI();
+    } else if (mode === 'ai') {
+        let move = pGame.move({ from: source, to: target, promotion: piece });
+        if (move) {
+            pBoard.position(pGame.fen());
+            updateGameStatus();
+            await makeEngineMove();
+        }
+    } else if (mode === 'multi') {
+        let move = mGame.move({ from: source, to: target, promotion: piece });
+        if (move) {
+            mBoard.position(mGame.fen());
+            socket.send(JSON.stringify({ type: "move", source: source, target: target, promotion: piece }));
+            updateMultiStatus();
+        }
+    }
 }
 
 // ==========================================
@@ -61,6 +133,14 @@ var aConfig = {
     draggable: true, dropOffBoard: 'trash', sparePieces: true, position: 'start',
     onDrop: function(source, target, piece) {
         if (source !== target && source !== 'spare' && target !== 'offboard') {
+            // Check for analyzer manual promotion
+            let isPawn = piece.charAt(1) === 'P';
+            let rank = target.charAt(1);
+            if (isPawn && (rank === '8' || rank === '1')) {
+                showPromotionPopup(source, target, 'analyzer', piece.charAt(0));
+                return 'snapback'; 
+            }
+
             handleManualCastling(source, target, piece);
             toggleTurn(); 
             updateFenUI();
@@ -79,8 +159,17 @@ $('#analyzerBoard').on('mousedown touchstart', '.square-55d63', function(e) {
     let sq = $(this).attr('data-square');
 
     if (aSelectedSq && aSelectedSq !== sq) {
-        // BUG FIX: White goti sirf tabhi hilegi jab us square par Valid 'Dot' (highlight-path) ho
         if ($(this).hasClass('highlight-path')) {
+            let piece = aBoard.position()[aSelectedSq];
+            let isPawn = piece.charAt(1) === 'P';
+            let rank = sq.charAt(1);
+            
+            if (isPawn && (rank === '8' || rank === '1')) {
+                showPromotionPopup(aSelectedSq, sq, 'analyzer', piece.charAt(0));
+                clearAllHighlights(); aSelectedSq = null;
+                return;
+            }
+
             aBoard.move(aSelectedSq + '-' + sq);
             handleManualCastling(aSelectedSq, sq, aBoard.position()[sq]);
             toggleTurn(); updateFenUI();
@@ -118,7 +207,6 @@ function generateFullFen() {
 }
 
 function updateFenUI() { document.getElementById('fenInput').value = generateFullFen(); }
-function setFenManual() { aBoard.position(document.getElementById('fenInput').value.split(' ')[0]); clearAllHighlights(); }
 
 function updateEvalBar(scoreValue, type, turn) {
     let actualScore = parseFloat(scoreValue);
@@ -187,6 +275,14 @@ var pSelectedSq = null;
 function pOnDragStart (source, piece) { if (pGame.game_over() || piece.search(/^b/) !== -1) return false; }
 
 async function pOnDrop (source, target) {
+    let moves = pGame.moves({ verbose: true });
+    let isPromo = moves.some(m => m.from === source && m.to === target && m.flags.includes('p'));
+    
+    if (isPromo) {
+        showPromotionPopup(source, target, 'ai', pGame.turn());
+        return 'snapback'; 
+    }
+
     var move = pGame.move({ from: source, to: target, promotion: 'q' });
     if (move === null) return 'snapback'; 
     clearAllHighlights(); pSelectedSq = null;
@@ -207,6 +303,15 @@ $('#playBoard').on('mousedown touchstart', '.square-55d63', async function(e) {
     let sq = $(this).attr('data-square');
     
     if (pSelectedSq && $(this).hasClass('highlight-path')) {
+        let moves = pGame.moves({ verbose: true });
+        let isPromo = moves.some(m => m.from === pSelectedSq && m.to === sq && m.flags.includes('p'));
+        
+        if (isPromo) {
+            showPromotionPopup(pSelectedSq, sq, 'ai', pGame.turn());
+            clearAllHighlights(); pSelectedSq = null;
+            return;
+        }
+
         let move = pGame.move({ from: pSelectedSq, to: sq, promotion: 'q' });
         if (move) {
             pBoard.position(pGame.fen());
@@ -247,15 +352,32 @@ async function makeEngineMove() {
 
 function updateGameStatus() {
     let statusText = "Your Turn (White)";
-    if (pGame.in_checkmate()) statusText = "Game Over - Checkmate!";
-    else if (pGame.in_draw()) statusText = "Game Over - Draw!";
-    else if (pGame.turn() === 'b') statusText = "AI is thinking...";
+    let overlay = document.getElementById('aiResultOverlay');
+    overlay.style.display = 'none';
+
+    if (pGame.in_checkmate()) {
+        let winner = pGame.turn() === 'w' ? "AI Wins!" : "You Win!";
+        statusText = "Game Over - Checkmate!";
+        overlay.innerText = winner;
+        overlay.style.display = 'flex';
+    } else if (pGame.in_draw()) {
+        statusText = "Game Over - Draw!";
+        overlay.innerText = "Draw!";
+        overlay.style.display = 'flex';
+    } else if (pGame.turn() === 'b') {
+        statusText = "AI is thinking...";
+    }
     
     document.getElementById('gameStatus').innerText = statusText;
     document.getElementById('moveHistory').innerText = pGame.pgn() || "No moves yet.";
 }
 
-function startNewGame() { pGame.reset(); pBoard.start(); clearAllHighlights(); updateGameStatus(); }
+function startNewGame() { 
+    pGame.reset(); pBoard.start(); 
+    clearAllHighlights(); 
+    document.getElementById('aiResultOverlay').style.display = 'none';
+    updateGameStatus(); 
+}
 
 // ==========================================
 // TAB 3: PLAY ONLINE (MULTIPLAYER) LOGIC
@@ -275,6 +397,14 @@ var mConfig = {
         if (mGame.turn() !== myPlayerColor) return false;
     },
     onDrop: function(source, target) {
+        let moves = mGame.moves({ verbose: true });
+        let isPromo = moves.some(m => m.from === source && m.to === target && m.flags.includes('p'));
+        
+        if (isPromo) {
+            showPromotionPopup(source, target, 'multi', mGame.turn());
+            return 'snapback';
+        }
+
         var move = mGame.move({ from: source, to: target, promotion: 'q' });
         if (move === null) return 'snapback';
         socket.send(JSON.stringify({ type: "move", source: source, target: target, promotion: 'q' }));
@@ -293,6 +423,15 @@ $('#multiBoard').on('mousedown touchstart', '.square-55d63', function(e) {
     let sq = $(this).attr('data-square');
     
     if (mSelectedSq && $(this).hasClass('highlight-path')) {
+        let moves = mGame.moves({ verbose: true });
+        let isPromo = moves.some(m => m.from === mSelectedSq && m.to === sq && m.flags.includes('p'));
+        
+        if (isPromo) {
+            showPromotionPopup(mSelectedSq, sq, 'multi', mGame.turn());
+            clearAllHighlights(); mSelectedSq = null;
+            return;
+        }
+
         let move = mGame.move({ from: mSelectedSq, to: sq, promotion: 'q' });
         if (move) {
             mBoard.position(mGame.fen());
@@ -322,6 +461,7 @@ function connectToRoom(roomId, isCreator) {
         document.getElementById('multiActions').style.display = 'flex'; 
         document.getElementById('displayRoomCode').innerText = roomId;
         document.getElementById('multiStatus').innerText = "Waiting for friend to join...";
+        document.getElementById('multiResultOverlay').style.display = 'none';
     };
 
     socket.onmessage = function(event) {
@@ -340,6 +480,10 @@ function connectToRoom(roomId, isCreator) {
             roomActive = false;
             document.getElementById('multiStatus').innerText = data.message;
             document.getElementById('multiStatus').style.color = "#10b981"; 
+            
+            let overlay = document.getElementById('multiResultOverlay');
+            overlay.innerText = "Opponent Left";
+            overlay.style.display = 'flex';
         }
         else if (data.type === 'error') {
             alert(data.message);
@@ -366,9 +510,19 @@ function joinRoom() {
 function updateMultiStatus() {
     if (!roomActive) return;
     let statusText = "";
-    if (mGame.in_checkmate()) statusText = "Checkmate! " + (mGame.turn() === 'w' ? "Black" : "White") + " wins!";
-    else if (mGame.in_draw()) statusText = "Game Over - Draw!";
-    else {
+    let overlay = document.getElementById('multiResultOverlay');
+    overlay.style.display = 'none';
+
+    if (mGame.in_checkmate()) {
+        let winnerText = mGame.turn() === 'w' ? "Black Wins!" : "White Wins!";
+        statusText = "Checkmate! " + winnerText;
+        overlay.innerText = (mGame.turn() === myPlayerColor) ? "You Lose!" : "You Win!";
+        overlay.style.display = 'flex';
+    } else if (mGame.in_draw()) {
+        statusText = "Game Over - Draw!";
+        overlay.innerText = "Draw!";
+        overlay.style.display = 'flex';
+    } else {
         if (mGame.turn() === myPlayerColor) statusText = "Your Turn to move!";
         else statusText = "Friend's turn... waiting.";
     }
@@ -380,14 +534,20 @@ function resignGame(mode) {
     
     if (mode === 'ai') {
         document.getElementById('gameStatus').innerText = "You Resigned. AI Wins!";
-        pGame.clear(); 
-        pBoard.clear(); 
+        let overlay = document.getElementById('aiResultOverlay');
+        overlay.innerText = "AI Wins!";
+        overlay.style.display = 'flex';
+        pGame.clear(); pBoard.clear(); 
     } else if (mode === 'multi') {
         if (socket && roomActive) {
             socket.send(JSON.stringify({ type: "resign" }));
             roomActive = false;
             document.getElementById('multiStatus').innerText = "You Resigned. You lose.";
             document.getElementById('multiStatus').style.color = "#ef4444";
+            
+            let overlay = document.getElementById('multiResultOverlay');
+            overlay.innerText = "You Resigned";
+            overlay.style.display = 'flex';
         }
     }
 }
@@ -406,6 +566,7 @@ function exitRoom() {
     document.getElementById('multiActions').style.display = 'none';
     document.getElementById('multiStatus').innerText = "Waiting to start...";
     document.getElementById('multiStatus').style.color = "#2563eb";
+    document.getElementById('multiResultOverlay').style.display = 'none';
 }
 
 resetEvalBar();
