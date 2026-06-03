@@ -59,9 +59,9 @@
                 </div>
 
                 <div class="action-card">
-                    <div class="input-group">
-                        <span>Think Time (s)</span>
-                        <input type="number" id="thinkTime" value="1" min="1" max="10">
+                   <div class="input-group">
+                        <span>Real Time Taken</span>
+                        <input type="text" id="analyzerTimeOut" value="0.00 s" readonly style="color: #ef4444; font-weight: bold; font-size: 16px;">
                     </div>
                     <div class="action-options">
                         <label><input type="radio" name="action" value="show" checked> Show Highlight</label>
@@ -94,7 +94,10 @@
             <div class="controls-container">
                 <div class="control-card text-center action-card">
                     <h3 id="gameStatus">Game in Progress - Your Turn</h3>
-                    
+                    <div class="input-group" style="margin-top: 10px; justify-content: center; background: #fff; border: 1px solid #e2e8f0;">
+                        <span style="color: #64748b;">AI Think Time:</span>
+                        <input type="text" id="playTimeOut" value="0.00 s" readonly style="color: #ef4444; font-weight: bold; text-align: center; max-width: 100px; border: none; background: transparent;">
+                    </div>                    
                     <div class="eval-bar-wrapper" style="margin-top: 15px;">
                         <div class="eval-bar-white" id="evalWhitePlay">50%</div>
                         <div class="eval-bar-black" id="evalBlackPlay">50%</div>
