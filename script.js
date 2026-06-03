@@ -16,8 +16,8 @@ function switchTab(tabId) {
 window.addEventListener('resize', resizeAllBoards);
 
 // YAHAN APNA HUGGING FACE LINK DAALNA HAI
-const API_URL = 'https://TUMHARA_USERNAME-chess-backend.hf.space/calculate_move';
-const WS_URL = 'wss://TUMHARA_USERNAME-chess-backend.hf.space/ws/'; 
+const API_URL = 'https://stackbyujjwal1-stackchess.hf.space/calculate_move';
+const WS_URL = 'wss://stackbyujjwal1-stackchess.hf.space/ws/';
 
 const PIECE_THEME = 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png';
 
