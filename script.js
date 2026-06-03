@@ -15,10 +15,7 @@ function switchTab(tabId) {
 
 window.addEventListener('resize', resizeAllBoards);
 
-// API link ke aage /calculate_move lagana zaroori hai
 const API_URL = 'https://chess-backend-zd6b.onrender.com/calculate_move';
-
-// WebSocket link mein https ki jagah wss aayega aur aage /ws/ lagega
 const WS_URL = 'wss://chess-backend-zd6b.onrender.com/ws/';
 
 const PIECE_THEME = 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png';
