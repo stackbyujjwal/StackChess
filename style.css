@@ -1,0 +1,95 @@
+/* Base Resets & Global Styles */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #f1f5f9; color: #334155; display: flex; justify-content: center; min-height: 100vh; padding: 20px; align-items: flex-start; overflow-x: hidden;}
+
+.text-blue { color: #2563eb !important; }
+.text-yellow { color: #d97706 !important; }
+.text-red { color: #ef4444 !important; font-weight: bold;}
+.text-center { text-align: center; }
+
+/* Dashboard Layout (STRICT DESKTOP LAYOUT) */
+.dashboard-wrapper { background: #ffffff; width: 100%; max-width: 1150px; border-radius: 12px; padding: 25px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; margin-top: 2vh;}
+.header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 20px;}
+.header h2 { color: #0f172a; font-size: 24px; margin: 0;}
+
+/* Tabs */
+.tabs { display: flex; gap: 10px; }
+.tab-btn { background: transparent; border: 1px solid #2563eb; color: #2563eb; padding: 8px 18px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.3s; font-size: 14px;}
+.tab-btn.active, .tab-btn:hover { background: #2563eb; color: #ffffff; }
+.view-section { display: none; }
+.view-section.active-view { display: block; }
+
+/* Main Grid - SIDE BY SIDE FOR DESKTOP */
+.layout-container { display: flex; gap: 30px; align-items: stretch; }
+.board-container { width: 500px; flex-shrink: 0; } 
+.controls-container { flex-grow: 1; display: flex; flex-direction: column; gap: 15px; }
+.large-board { width: 100%; }
+
+/* Cards & Components */
+.control-card { background: #f8fafc; padding: 18px; border-radius: 8px; border: 1px solid #e2e8f0; }
+.grid-card { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+.settings-box { background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; display: flex; flex-direction: column; gap: 8px; font-size: 14px;}
+.box-title { color: #64748b; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px; font-weight: bold; }
+.check-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.action-card { background: #f8fafc; padding: 18px; border-radius: 8px; border: 1px solid #e2e8f0; display: flex; flex-direction: column; gap: 15px;}
+.action-options { display: flex; gap: 20px; justify-content: center; font-size: 14px; }
+
+/* Inputs & Buttons */
+.input-group { display: flex; align-items: center; gap: 12px; background: #ffffff; padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e1; }
+.input-group span { color: #64748b; font-size: 12px; text-transform: uppercase; font-weight: bold;}
+.input-group input { flex-grow: 1; background: transparent; border: none; color: #0f172a; outline: none; font-family: monospace; font-size: 14px;}
+.btn-row { display: flex; gap: 10px; margin-bottom: 15px; }
+.btn-ghost { background: #e2e8f0; color: #334155; border: none; padding: 10px 15px; cursor: pointer; border-radius: 6px; flex-grow: 1; transition: 0.2s; font-size: 14px; font-weight: 600;}
+.btn-ghost:hover { background: #cbd5e1; }
+.btn-small { background: #94a3b8; border: none; color: white; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;}
+.btn-primary { background: #2563eb; color: white; border: none; padding: 14px; font-size: 16px; font-weight: bold; border-radius: 8px; cursor: pointer; transition: 0.2s;}
+.btn-primary:hover { background: #1d4ed8; }
+
+/* Results & History */
+.results-card { display: flex; gap: 15px; }
+.stat { background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; flex-grow: 1; text-align: center; display: flex; flex-direction: column; }
+.stat span { color: #64748b; font-size: 11px; text-transform: uppercase; margin-bottom: 4px; font-weight: bold;}
+.stat strong { font-size: 22px; font-family: monospace; color: #0f172a;}
+.history-box { background: #ffffff; padding: 15px; border-radius: 6px; height: 200px; overflow-y: auto; font-family: monospace; font-size: 14px; line-height: 1.6; border: 1px solid #e2e8f0; text-align: left;}
+
+/* Eval Bar - Fixed Gap issue */
+.eval-bar-wrapper { width: 100%; height: 26px; background: #e2e8f0; border-radius: 6px; overflow: hidden; display: flex; border: 1px solid #cbd5e1;}
+.eval-bar-white { background: #ffffff; height: 100%; transition: width 0.5s; display: flex; align-items: center; padding-left: 10px; color: #0f172a; font-weight: bold; font-size: 12px; width: 50%; overflow: hidden;}
+.eval-bar-black { background: #334155; height: 100%; flex-grow: 1; display: flex; align-items: center; justify-content: flex-end; padding-right: 10px; color: #ffffff; font-weight: bold; font-size: 12px; overflow: hidden;}
+
+/* Highlights & Path Dots (TAP-TO-MOVE) */
+.highlight-blue { box-shadow: inset 0 0 3px 3px #38bdf8 !important; background-color: rgba(56, 189, 248, 0.4) !important; }
+.highlight-red { box-shadow: inset 0 0 3px 3px #f43f5e !important; background-color: rgba(244, 63, 94, 0.4) !important; }
+.highlight-path { position: relative; cursor: pointer; }
+.highlight-path::after {
+    content: ''; position: absolute;
+    top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 25%; height: 25%;
+    background-color: rgba(0, 0, 0, 0.3);
+    border-radius: 50%; pointer-events: none; z-index: 99;
+}
+.highlight-path:has(.piece-417db)::after {
+    width: 85%; height: 85%;
+    background-color: transparent;
+    border: 5px solid rgba(0, 0, 0, 0.3);
+}
+
+/* --- MOBILE SPECIFIC RESPONSIVENESS (SMART STACKING) --- */
+@media (max-width: 850px) {
+    body { padding: 10px; }
+    .dashboard-wrapper { padding: 15px; margin-top: 0; border-radius: 8px; }
+    
+    .header { flex-direction: column; text-align: center; gap: 10px;}
+    .tabs { flex-wrap: wrap; justify-content: center; }
+    
+    .layout-container { flex-direction: column; align-items: center; gap: 15px;}
+    .board-container { width: 100%; max-width: 450px; } 
+    
+    .controls-container { width: 100%; max-width: 450px; display: flex; flex-direction: column; }
+    .action-card { order: -1; } 
+    
+    .grid-card { grid-template-columns: 1fr; }
+    .btn-row, .results-card, .input-group { flex-wrap: wrap; }
+    
+    .hide-on-mobile { display: none !important; }
+}

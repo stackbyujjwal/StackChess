@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StackChess Pro</title>
+    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="dashboard-wrapper">
+    <div class="header">
+        <div>
+            <h2>StackChess <span style="color:#2563eb;">Pro</span></h2>
+            <p style="font-size: 12px; color: #64748b; margin-top: 2px;">Developed by @stackbyujjwal</p>
+        </div>
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('analyzer')">Analyzer</button>
+            <button class="tab-btn" onclick="switchTab('play')">Play vs AI</button>
+            <button class="tab-btn" onclick="switchTab('multiplayer')">Play Online</button>
+        </div>
+    </div>
+
+    <div id="analyzer-view" class="view-section active-view">
+        <div class="layout-container">
+            <div class="board-container">
+                <div id="analyzerBoard" class="large-board"></div>
+            </div>
+            
+            <div class="controls-container">
+                <div class="control-card">
+                    <div class="btn-row">
+                        <button class="btn-ghost" onclick="aBoard.start(); updateFenUI(); resetEvalBar();">Start Pos</button>
+                        <button class="btn-ghost" onclick="aBoard.clear(); clearHighlights(); updateFenUI(); resetEvalBar();">Clear</button>
+                        <button class="btn-ghost" onclick="aBoard.flip()">Flip</button>
+                    </div>
+                    <div class="input-group" style="display: none;">
+                        <span>FEN</span>
+                        <input type="text" id="fenInput" value="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1">
+                    </div>
+                </div>
+
+                <div class="grid-card">
+                    <div class="settings-box">
+                        <div class="box-title">Turn to Move</div>
+                        <label><input type="radio" name="turn" value="w" checked onchange="updateFenUI()"> White</label>
+                        <label><input type="radio" name="turn" value="b" onchange="updateFenUI()"> Black</label>
+                    </div>
+                    <div class="settings-box hide-on-mobile">
+                        <div class="box-title">Castling Rights</div>
+                        <div class="check-grid">
+                            <label><input type="checkbox" id="cwK" checked onchange="updateFenUI()"> W (O-O)</label>
+                            <label><input type="checkbox" id="cbK" checked onchange="updateFenUI()"> B (O-O)</label>
+                            <label><input type="checkbox" id="cwQ" checked onchange="updateFenUI()"> W (O-O-O)</label>
+                            <label><input type="checkbox" id="cbQ" checked onchange="updateFenUI()"> B (O-O-O)</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="action-card">
+                    <div class="input-group">
+                        <span>Think Time (s)</span>
+                        <input type="number" id="thinkTime" value="1" min="1" max="10">
+                    </div>
+                    <div class="action-options">
+                        <label><input type="radio" name="action" value="show" checked> Show Highlight</label>
+                        <label><input type="radio" name="action" value="make"> Auto-Move</label>
+                    </div>
+                    <button class="btn-primary" id="calcBtn" onclick="calculateAnalyzer()">Analyze Position</button>
+                    
+                    <div class="results-card" style="margin-top: 5px;">
+                        <div class="stat" style="background: #ffffff;"><span>Best Move</span><strong id="bestMoveOut" class="text-blue">-</strong></div>
+                        <div class="stat" style="background: #ffffff;"><span>Eval</span><strong id="scoreOut">-</strong></div>
+                        <div class="stat hide-on-mobile" style="background: #ffffff;"><span>Depth</span><strong id="depthOut" class="text-yellow">-</strong></div>
+                    </div>
+                    
+                    <div class="eval-bar-wrapper" id="evalBar">
+                        <div class="eval-bar-white" id="evalWhite">50%</div>
+                        <div class="eval-bar-black" id="evalBlack">50%</div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <div id="play-view" class="view-section">
+        <div class="layout-container">
+            <div class="board-container">
+                <div id="playBoard" class="large-board"></div>
+            </div>
+            
+            <div class="controls-container">
+                <div class="control-card text-center action-card">
+                    <h3 id="gameStatus">Game in Progress - Your Turn</h3>
+                    <div class="btn-row" style="justify-content: center; margin-top: 15px; flex-wrap: wrap;">
+                        <button class="btn-primary" onclick="startNewGame()">Start New</button>
+                        <button class="btn-ghost text-red" onclick="resignGame('ai')">Resign</button>
+                        <button class="btn-ghost" onclick="copyPGN(pGame)">Copy PGN</button>
+                    </div>
+                </div>
+                <div class="control-card hide-on-mobile">
+                    <div class="box-title">Move History</div>
+                    <div id="moveHistory" class="history-box">No moves yet.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="multiplayer-view" class="view-section">
+        <div class="layout-container">
+            <div class="board-container">
+                <div id="multiBoard" class="large-board"></div>
+            </div>
+            
+            <div class="controls-container">
+                <div class="control-card text-center action-card">
+                    <h3 id="multiStatus" class="text-blue">Waiting to start...</h3>
+                    
+                    <div id="roomControls" style="margin-top: 20px; display: flex; flex-direction: column; gap: 15px;">
+                        <button class="btn-primary" onclick="createRoom()">Host Game (Play White)</button>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <hr style="flex-grow: 1; border-color: #e2e8f0;">
+                            <span style="color: #64748b; font-size: 12px; font-weight: bold;">OR</span>
+                            <hr style="flex-grow: 1; border-color: #e2e8f0;">
+                        </div>
+                        <div class="input-group">
+                            <span>Code</span>
+                            <input type="text" id="joinRoomCode" placeholder="6-digit Code" maxlength="6" style="text-transform: uppercase;">
+                            <button class="btn-primary" style="padding: 8px 15px;" onclick="joinRoom()">Join</button>
+                        </div>
+                    </div>
+
+                    <div id="roomInfo" style="display: none; margin-top: 20px; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                        <span style="font-size: 12px; font-weight: bold; color: #64748b;">YOUR ROOM CODE</span><br>
+                        <strong id="displayRoomCode" style="font-size: 32px; letter-spacing: 5px; color: #0f172a;">------</strong>
+                    </div>
+
+                    <div id="multiActions" style="display: none; margin-top: 15px; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                        <button class="btn-ghost" onclick="exitRoom()">Exit Room</button>
+                        <button class="btn-ghost text-red" onclick="resignGame('multi')">Resign</button>
+                        <button class="btn-ghost" onclick="copyPGN(mGame)">Copy PGN</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<script src="script.js"></script>
+</body>
+</html>
