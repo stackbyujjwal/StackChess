@@ -15,8 +15,8 @@ function switchTab(tabId) {
 
 window.addEventListener('resize', resizeAllBoards);
 
-const API_URL = 'http://localhost:8000/calculate_move';
-const WS_URL = 'ws://localhost:8000/ws/'; 
+const API_URL = 'https://chess-backend-zd6b.onrender.com/calculate_move';
+const WS_URL = 'wss://chess-backend-zd6b.onrender.com/ws/';
 const PIECE_THEME = 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png';
 
 function clearAllHighlights() {
