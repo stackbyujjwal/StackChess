@@ -11,7 +11,7 @@ function switchTab(tabId) {
     event.target.classList.add('active');
     document.getElementById(tabId + '-view').classList.add('active-view');
     resizeAllBoards();
-    cancelPromotion(); // Hide active popup if tab changes
+    cancelPromotion();
 }
 
 window.addEventListener('resize', () => { resizeAllBoards(); cancelPromotion(); });
@@ -30,6 +30,47 @@ function copyPGN(gameInstance) {
 }
 
 // ==========================================
+// SHARED EVALUATION LOGIC
+// ==========================================
+function updateEvalBar(scoreValue, type, turn, whiteId, blackId) {
+    let actualScore = parseFloat(scoreValue);
+    if (turn === 'b' && type !== 'mate') actualScore = -actualScore; 
+    let whitePct = 50;
+    if (type === 'mate') whitePct = actualScore > 0 ? 100 : 0;
+    else {
+        let cappedScore = Math.max(-6, Math.min(6, actualScore));
+        whitePct = 50 + (cappedScore * 8.33); 
+    }
+    
+    let wEl = document.getElementById(whiteId);
+    let bEl = document.getElementById(blackId);
+    
+    if (wEl && bEl) {
+        wEl.style.width = whitePct + '%';
+        wEl.innerText = whitePct > 10 ? Math.round(whitePct) + '%' : '';
+        bEl.innerText = (100 - whitePct) > 10 ? Math.round(100 - whitePct) + '%' : '';
+    }
+}
+
+function resetEvalBar(whiteId, blackId) { 
+    updateEvalBar(0, 'cp', 'w', whiteId, blackId); 
+}
+
+// Background Live Evaluation for Play & Multiplayer
+async function fetchEvaluationBackground(fen, turn, whiteId, blackId) {
+    try {
+        let response = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fen_string: fen, think_time: 1 })
+        });
+        let data = await response.json();
+        let isMate = typeof data.score === 'string' && data.score.includes('Mate');
+        updateEvalBar(data.score, isMate ? 'mate' : 'cp', turn, whiteId, blackId);
+    } catch(e) {}
+}
+
+// ==========================================
 // VISUAL PAWN PROMOTION LOGIC (INLINE FIX)
 // ==========================================
 var pendingPromoMove = null;
@@ -38,7 +79,6 @@ function showPromotionPopup(source, target, mode, turn) {
     pendingPromoMove = { source, target, mode, turn };
     let color = turn === 'w' ? 'w' : 'b';
     
-    // FIX: Chessboardjs piece names require uppercase (wQ.png, not wq.png)
     document.getElementById('promo-q').src = `https://chessboardjs.com/img/chesspieces/wikipedia/${color}Q.png`;
     document.getElementById('promo-r').src = `https://chessboardjs.com/img/chesspieces/wikipedia/${color}R.png`;
     document.getElementById('promo-b').src = `https://chessboardjs.com/img/chesspieces/wikipedia/${color}B.png`;
@@ -55,15 +95,9 @@ function showPromotionPopup(source, target, mode, turn) {
         let rank = target.charAt(1);
         let topPos = sqOffset.top;
         
-        // If black promotes (row 1), shift the popup up so it doesn't fall off the board
         if (rank === '1') topPos = sqOffset.top - (sqWidth * 3);
 
-        popup.css({
-            display: 'flex',
-            top: topPos + 'px',
-            left: sqOffset.left + 'px',
-            width: sqWidth + 'px'
-        });
+        popup.css({ display: 'flex', top: topPos + 'px', left: sqOffset.left + 'px', width: sqWidth + 'px' });
     }
 }
 
@@ -104,6 +138,7 @@ async function executePromotion(piece) {
             mBoard.position(mGame.fen());
             socket.send(JSON.stringify({ type: "move", source: source, target: target, promotion: piece }));
             updateMultiStatus();
+            fetchEvaluationBackground(mGame.fen(), mGame.turn(), 'evalWhiteMulti', 'evalBlackMulti');
         }
     }
 }
@@ -133,7 +168,6 @@ var aConfig = {
     draggable: true, dropOffBoard: 'trash', sparePieces: true, position: 'start',
     onDrop: function(source, target, piece) {
         if (source !== target && source !== 'spare' && target !== 'offboard') {
-            // Check for analyzer manual promotion
             let isPawn = piece.charAt(1) === 'P';
             let rank = target.charAt(1);
             if (isPawn && (rank === '8' || rank === '1')) {
@@ -208,21 +242,6 @@ function generateFullFen() {
 
 function updateFenUI() { document.getElementById('fenInput').value = generateFullFen(); }
 
-function updateEvalBar(scoreValue, type, turn) {
-    let actualScore = parseFloat(scoreValue);
-    if (turn === 'b' && type !== 'mate') actualScore = -actualScore; 
-    let whitePct = 50;
-    if (type === 'mate') whitePct = actualScore > 0 ? 100 : 0;
-    else {
-        let cappedScore = Math.max(-6, Math.min(6, actualScore));
-        whitePct = 50 + (cappedScore * 8.33); 
-    }
-    document.getElementById('evalWhite').style.width = whitePct + '%';
-    document.getElementById('evalWhite').innerText = whitePct > 10 ? Math.round(whitePct) + '%' : '';
-    document.getElementById('evalBlack').innerText = (100 - whitePct) > 10 ? Math.round(100 - whitePct) + '%' : '';
-}
-function resetEvalBar() { updateEvalBar(0, 'cp', 'w'); }
-
 async function calculateAnalyzer() {
     let btn = document.getElementById('calcBtn');
     btn.innerText = "Processing...";
@@ -242,9 +261,8 @@ async function calculateAnalyzer() {
         document.getElementById('depthOut').innerText = data.depth + "+";
 
         let currentTurn = document.querySelector('input[name="turn"]:checked').value;
-        if (typeof data.score === 'string' && data.score.includes('Mate')) {
-            updateEvalBar(data.score.includes('-') ? -100 : 100, 'mate', currentTurn);
-        } else updateEvalBar(data.score, 'cp', currentTurn);
+        let isMate = typeof data.score === 'string' && data.score.includes('Mate');
+        updateEvalBar(data.score, isMate ? 'mate' : 'cp', currentTurn, 'evalWhite', 'evalBlack');
 
         if (data.best_move) {
             let action = document.querySelector('input[name="action"]:checked').value;
@@ -260,7 +278,9 @@ async function calculateAnalyzer() {
                 $('#analyzerBoard .square-' + toSq).addClass('highlight-red');
             }
         }
-    } catch (error) { alert("Backend is offline!"); }
+    } catch (error) { 
+        alert("Server is waking up from sleep mode! 🚀 Please wait 1-2 minutes and try again. (Ye sirf din me ek baar hota hai)"); 
+    }
     btn.innerText = "Analyze Position";
     btn.style.background = "#2563eb";
 }
@@ -336,15 +356,26 @@ $('#playBoard').on('mousedown touchstart', '.square-55d63', async function(e) {
 async function makeEngineMove() {
     document.getElementById('gameStatus').innerText = "AI is thinking...";
     try {
+        let fenToEvaluate = pGame.fen();
+        let turnToEvaluate = pGame.turn();
+        
         let response = await fetch(API_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fen_string: pGame.fen(), think_time: 1 })
+            body: JSON.stringify({ fen_string: fenToEvaluate, think_time: 1 })
         });
         let data = await response.json();
+        
+        // Evaluates your move quality instantly
+        let isMate = typeof data.score === 'string' && data.score.includes('Mate');
+        updateEvalBar(data.score, isMate ? 'mate' : 'cp', turnToEvaluate, 'evalWhitePlay', 'evalBlackPlay');
+
         if(data.best_move) {
             pGame.move({ from: data.best_move.substring(0,2), to: data.best_move.substring(2,4), promotion: 'q' });
             pBoard.position(pGame.fen());
+            
+            // Calculates evaluation for new position after AI plays
+            fetchEvaluationBackground(pGame.fen(), pGame.turn(), 'evalWhitePlay', 'evalBlackPlay');
         }
     } catch(e) {}
     updateGameStatus();
@@ -376,6 +407,7 @@ function startNewGame() {
     pGame.reset(); pBoard.start(); 
     clearAllHighlights(); 
     document.getElementById('aiResultOverlay').style.display = 'none';
+    resetEvalBar('evalWhitePlay', 'evalBlackPlay');
     updateGameStatus(); 
 }
 
@@ -410,6 +442,7 @@ var mConfig = {
         socket.send(JSON.stringify({ type: "move", source: source, target: target, promotion: 'q' }));
         updateMultiStatus();
         clearAllHighlights(); mSelectedSq = null;
+        fetchEvaluationBackground(mGame.fen(), mGame.turn(), 'evalWhiteMulti', 'evalBlackMulti');
     },
     onSnapEnd: function() { mBoard.position(mGame.fen()); }
 };
@@ -438,6 +471,7 @@ $('#multiBoard').on('mousedown touchstart', '.square-55d63', function(e) {
             socket.send(JSON.stringify({ type: "move", source: mSelectedSq, target: sq, promotion: 'q' }));
             updateMultiStatus();
             clearAllHighlights(); mSelectedSq = null;
+            fetchEvaluationBackground(mGame.fen(), mGame.turn(), 'evalWhiteMulti', 'evalBlackMulti');
         }
         return;
     }
@@ -470,11 +504,14 @@ function connectToRoom(roomId, isCreator) {
             roomActive = true;
             mGame.reset(); mBoard.start();
             updateMultiStatus();
+            document.getElementById('multiEvalContainer').style.display = 'flex';
+            resetEvalBar('evalWhiteMulti', 'evalBlackMulti');
         } 
         else if (data.type === 'move') {
             mGame.move({ from: data.source, to: data.target, promotion: data.promotion });
             mBoard.position(mGame.fen());
             updateMultiStatus();
+            fetchEvaluationBackground(mGame.fen(), mGame.turn(), 'evalWhiteMulti', 'evalBlackMulti');
         } 
         else if (data.type === 'disconnect') {
             roomActive = false;
@@ -567,6 +604,8 @@ function exitRoom() {
     document.getElementById('multiStatus').innerText = "Waiting to start...";
     document.getElementById('multiStatus').style.color = "#2563eb";
     document.getElementById('multiResultOverlay').style.display = 'none';
+    document.getElementById('multiEvalContainer').style.display = 'none';
 }
 
-resetEvalBar();
+resetEvalBar('evalWhite', 'evalBlack');
+resetEvalBar('evalWhitePlay', 'evalBlackPlay');
