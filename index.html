@@ -80,7 +80,6 @@
                         <div class="eval-bar-black" id="evalBlack">50%</div>
                     </div>
                 </div>
-
             </div>
         </div>
     </div>
@@ -89,6 +88,7 @@
         <div class="layout-container">
             <div class="board-container">
                 <div id="playBoard" class="large-board"></div>
+                <div id="aiResultOverlay" class="game-result-overlay"></div>
             </div>
             
             <div class="controls-container">
@@ -112,6 +112,7 @@
         <div class="layout-container">
             <div class="board-container">
                 <div id="multiBoard" class="large-board"></div>
+                <div id="multiResultOverlay" class="game-result-overlay"></div>
             </div>
             
             <div class="controls-container">
@@ -146,7 +147,14 @@
             </div>
         </div>
     </div>
+</div>
 
+<div id="promoPopup" class="promo-popup">
+    <img class="promo-piece" id="promo-q" onclick="executePromotion('q')">
+    <img class="promo-piece" id="promo-r" onclick="executePromotion('r')">
+    <img class="promo-piece" id="promo-b" onclick="executePromotion('b')">
+    <img class="promo-piece" id="promo-n" onclick="executePromotion('n')">
+    <div class="promo-cancel" onclick="cancelPromotion()">✖</div>
 </div>
 
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
