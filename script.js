@@ -367,7 +367,8 @@ function resignGame(mode) {
     
     if (mode === 'ai') {
         document.getElementById('gameStatus').innerText = "You Resigned. AI Wins!";
-        pGame.set_fen("8/8/8/8/8/8/8/8 w - - 0 1"); 
+        pGame.clear(); // Fixed bug here
+        pBoard.clear(); // Fixed bug here
     } else if (mode === 'multi') {
         if (socket && roomActive) {
             socket.send(JSON.stringify({ type: "resign" }));
