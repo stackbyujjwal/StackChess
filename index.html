@@ -31,8 +31,8 @@
             <div class="controls-container">
                 <div class="control-card">
                     <div class="btn-row">
-                        <button class="btn-ghost" onclick="aBoard.start(); updateFenUI(); resetEvalBar();">Start Pos</button>
-                        <button class="btn-ghost" onclick="aBoard.clear(); clearHighlights(); updateFenUI(); resetEvalBar();">Clear</button>
+                        <button class="btn-ghost" onclick="aBoard.start(); updateFenUI(); resetEvalBar('evalWhite', 'evalBlack');">Start Pos</button>
+                        <button class="btn-ghost" onclick="aBoard.clear(); clearHighlights(); updateFenUI(); resetEvalBar('evalWhite', 'evalBlack');">Clear</button>
                         <button class="btn-ghost" onclick="aBoard.flip()">Flip</button>
                     </div>
                     <div class="input-group" style="display: none;">
@@ -94,6 +94,12 @@
             <div class="controls-container">
                 <div class="control-card text-center action-card">
                     <h3 id="gameStatus">Game in Progress - Your Turn</h3>
+                    
+                    <div class="eval-bar-wrapper" style="margin-top: 15px;">
+                        <div class="eval-bar-white" id="evalWhitePlay">50%</div>
+                        <div class="eval-bar-black" id="evalBlackPlay">50%</div>
+                    </div>
+
                     <div class="btn-row" style="justify-content: center; margin-top: 15px; flex-wrap: wrap;">
                         <button class="btn-primary" onclick="startNewGame()">Start New</button>
                         <button class="btn-ghost text-red" onclick="resignGame('ai')">Resign</button>
@@ -119,6 +125,11 @@
                 <div class="control-card text-center action-card">
                     <h3 id="multiStatus" class="text-blue">Waiting to start...</h3>
                     
+                    <div class="eval-bar-wrapper" id="multiEvalContainer" style="margin-top: 15px; display: none;">
+                        <div class="eval-bar-white" id="evalWhiteMulti">50%</div>
+                        <div class="eval-bar-black" id="evalBlackMulti">50%</div>
+                    </div>
+
                     <div id="roomControls" style="margin-top: 20px; display: flex; flex-direction: column; gap: 15px;">
                         <button class="btn-primary" onclick="createRoom()">Host Game (Play White)</button>
                         <div style="display: flex; align-items: center; gap: 10px;">
