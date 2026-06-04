@@ -246,16 +246,28 @@ async function calculateAnalyzer() {
     let btn = document.getElementById('calcBtn');
     btn.innerText = "Processing...";
     btn.style.background = "#d97706";
+    
+    // Live Timer Update Start
+    let timeOutField = document.getElementById('analyzerTimeOut');
+    if (timeOutField) timeOutField.value = "Thinking..."; 
     clearAllHighlights();
+
+    let startTime = performance.now(); // ⏱️ TIMER START
 
     try {
         let response = await fetch(API_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fen_string: generateFullFen(), think_time: parseInt(document.getElementById('thinkTime').value) })
+            body: JSON.stringify({ fen_string: generateFullFen(), think_time: 1 }) 
         });
         
         let data = await response.json();
+        
+        let endTime = performance.now(); // ⏱️ TIMER END
+        let timeTaken = ((endTime - startTime) / 1000).toFixed(2); // Calculate Seconds
+        
+        if (timeOutField) timeOutField.value = timeTaken + " s"; // Exact Time Update
+
         document.getElementById('bestMoveOut').innerText = data.best_move || "None";
         document.getElementById('scoreOut').innerText = data.score;
         document.getElementById('depthOut').innerText = data.depth + "+";
@@ -279,7 +291,7 @@ async function calculateAnalyzer() {
             }
         }
     } catch (error) { 
-        alert("Server is waking up from sleep mode! 🚀 Please wait 1-2 minutes and try again. (Ye sirf din me ek baar hota hai)"); 
+        alert("Server issue! Please try again."); 
     }
     btn.innerText = "Analyze Position";
     btn.style.background = "#2563eb";
@@ -355,6 +367,12 @@ $('#playBoard').on('mousedown touchstart', '.square-55d63', async function(e) {
 
 async function makeEngineMove() {
     document.getElementById('gameStatus').innerText = "AI is thinking...";
+    
+    let playTimeField = document.getElementById('playTimeOut');
+    if (playTimeField) playTimeField.value = "Thinking..."; // Live Status
+    
+    let startTime = performance.now(); // ⏱️ TIMER START
+
     try {
         let fenToEvaluate = pGame.fen();
         let turnToEvaluate = pGame.turn();
@@ -366,7 +384,11 @@ async function makeEngineMove() {
         });
         let data = await response.json();
         
-        // Evaluates your move quality instantly
+        let endTime = performance.now(); // ⏱️ TIMER END
+        let timeTaken = ((endTime - startTime) / 1000).toFixed(2); // Calculate seconds
+        
+        if (playTimeField) playTimeField.value = timeTaken + " s"; // Exact Time Update
+
         let isMate = typeof data.score === 'string' && data.score.includes('Mate');
         updateEvalBar(data.score, isMate ? 'mate' : 'cp', turnToEvaluate, 'evalWhitePlay', 'evalBlackPlay');
 
@@ -374,7 +396,6 @@ async function makeEngineMove() {
             pGame.move({ from: data.best_move.substring(0,2), to: data.best_move.substring(2,4), promotion: 'q' });
             pBoard.position(pGame.fen());
             
-            // Calculates evaluation for new position after AI plays
             fetchEvaluationBackground(pGame.fen(), pGame.turn(), 'evalWhitePlay', 'evalBlackPlay');
         }
     } catch(e) {}
@@ -407,6 +428,10 @@ function startNewGame() {
     pGame.reset(); pBoard.start(); 
     clearAllHighlights(); 
     document.getElementById('aiResultOverlay').style.display = 'none';
+    
+    let playTimeField = document.getElementById('playTimeOut');
+    if(playTimeField) playTimeField.value = "0.00 s";
+    
     resetEvalBar('evalWhitePlay', 'evalBlackPlay');
     updateGameStatus(); 
 }
