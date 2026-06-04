@@ -23,7 +23,7 @@ body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #f1f5f9; color: 
 .layout-container { display: flex; gap: 30px; align-items: stretch; }
 .board-container { width: 500px; flex-shrink: 0; position: relative; } /* Ensure overlays stay inside */
 .controls-container { flex-grow: 1; display: flex; flex-direction: column; gap: 15px; }
-.large-board { width: 100%; }
+.large-board { width: 100%; touch-action: none; }
 
 /* Cards & Components */
 .control-card { background: #f8fafc; padding: 18px; border-radius: 8px; border: 1px solid #e2e8f0; }
