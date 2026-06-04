@@ -1,34 +1,49 @@
 // ====== TAB SWITCHING & AUTO RESIZING ======
 function resizeAllBoards() {
-    if(aBoard) aBoard.resize();
-    if(pBoard) pBoard.resize();
-    if(mBoard) mBoard.resize();
+    if (window.aBoard) aBoard.resize();
+    if (window.pBoard) pBoard.resize();
+    if (window.mBoard) mBoard.resize();
 }
 
 function switchTab(tabId) {
+    const evt = window.event;
+
     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
     document.querySelectorAll('.view-section').forEach(view => view.classList.remove('active-view'));
-    event.target.classList.add('active');
+
+    if (evt && evt.target) evt.target.classList.add('active');
     document.getElementById(tabId + '-view').classList.add('active-view');
+
     resizeAllBoards();
     cancelPromotion();
 }
 
-window.addEventListener('resize', () => { resizeAllBoards(); cancelPromotion(); });
+window.addEventListener('resize', () => {
+    resizeAllBoards();
+    cancelPromotion();
+});
 
 const API_URL = 'https://stackbyujjwal1-stackchess.hf.space/calculate_move';
 const WS_URL = 'wss://stackbyujjwal1-stackchess.hf.space/ws/';
 const PIECE_THEME = 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png';
 window.lastTouch = 0;
 
-function clearAllHighlights() { 
-    $('.square-55d63').removeClass('highlight-blue highlight-red highlight-path'); 
+// ==========================================
+// UTILITIES
+// ==========================================
+function clearAllHighlights() {
+    $('.square-55d63').removeClass('highlight-blue highlight-red highlight-path');
 }
 
 function copyPGN(gameInstance) {
-    let pgn = gameInstance.pgn();
-    if (!pgn) { alert("No moves to copy yet!"); return; }
-    navigator.clipboard.writeText(pgn).then(() => { alert("PGN Copied to clipboard! Paste it anywhere."); });
+    const pgn = gameInstance.pgn();
+    if (!pgn) {
+        alert("No moves to copy yet!");
+        return;
+    }
+    navigator.clipboard.writeText(pgn).then(() => {
+        alert("PGN Copied to clipboard! Paste it anywhere.");
+    });
 }
 
 // ==========================================
@@ -36,118 +51,164 @@ function copyPGN(gameInstance) {
 // ==========================================
 function updateEvalBar(scoreValue, type, turn, whiteId, blackId) {
     let actualScore = parseFloat(scoreValue);
-    if (turn === 'b' && type !== 'mate') actualScore = -actualScore; 
+    if (Number.isNaN(actualScore)) actualScore = 0;
+
+    if (turn === 'b' && type !== 'mate') actualScore = -actualScore;
+
     let whitePct = 50;
-    if (type === 'mate') whitePct = actualScore > 0 ? 100 : 0;
-    else {
-        let cappedScore = Math.max(-6, Math.min(6, actualScore));
-        whitePct = 50 + (cappedScore * 8.33); 
+    if (type === 'mate') {
+        whitePct = actualScore > 0 ? 100 : 0;
+    } else {
+        const cappedScore = Math.max(-6, Math.min(6, actualScore));
+        whitePct = 50 + (cappedScore * 8.33);
     }
-    
-    let wEl = document.getElementById(whiteId);
-    let bEl = document.getElementById(blackId);
-    
+
+    whitePct = Math.max(0, Math.min(100, whitePct));
+
+    const wEl = document.getElementById(whiteId);
+    const bEl = document.getElementById(blackId);
+
     if (wEl && bEl) {
         wEl.style.width = whitePct + '%';
+        bEl.style.width = (100 - whitePct) + '%';
+
         wEl.innerText = whitePct > 10 ? Math.round(whitePct) + '%' : '';
         bEl.innerText = (100 - whitePct) > 10 ? Math.round(100 - whitePct) + '%' : '';
     }
 }
 
-function resetEvalBar(whiteId, blackId) { 
-    updateEvalBar(0, 'cp', 'w', whiteId, blackId); 
+function resetEvalBar(whiteId, blackId) {
+    updateEvalBar(0, 'cp', 'w', whiteId, blackId);
 }
 
-// Background Live Evaluation for Play & Multiplayer
 async function fetchEvaluationBackground(fen, turn, whiteId, blackId) {
     try {
-        let response = await fetch(API_URL, {
+        const response = await fetch(API_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ fen_string: fen, think_time: 1 })
         });
-        let data = await response.json();
-        let isMate = typeof data.score === 'string' && data.score.includes('Mate');
+
+        const data = await response.json();
+        const isMate = typeof data.score === 'string' && data.score.includes('Mate');
         updateEvalBar(data.score, isMate ? 'mate' : 'cp', turn, whiteId, blackId);
-    } catch(e) {}
+    } catch (e) {
+        // silent fail
+    }
 }
 
 // ==========================================
 // VISUAL PAWN PROMOTION LOGIC
 // ==========================================
 var pendingPromoMove = null;
+let promoOpenedAt = 0;
 
 function showPromotionPopup(source, target, mode, turn) {
     pendingPromoMove = { source, target, mode, turn };
-    let color = turn === 'w' ? 'w' : 'b';
-    
+    promoOpenedAt = Date.now();
+
+    const color = turn === 'w' ? 'w' : 'b';
+
     document.getElementById('promo-q').src = `https://chessboardjs.com/img/chesspieces/wikipedia/${color}Q.png`;
     document.getElementById('promo-r').src = `https://chessboardjs.com/img/chesspieces/wikipedia/${color}R.png`;
     document.getElementById('promo-b').src = `https://chessboardjs.com/img/chesspieces/wikipedia/${color}B.png`;
     document.getElementById('promo-n').src = `https://chessboardjs.com/img/chesspieces/wikipedia/${color}N.png`;
 
-    let boardId = mode === 'analyzer' ? '#analyzerBoard' : (mode === 'ai' ? '#playBoard' : '#multiBoard');
-    let squareEl = $(`${boardId} .square-${target}`);
-    
-    if (squareEl.length) {
-        let popup = $('#promoPopup');
-        let sqOffset = squareEl.offset();
-        let sqWidth = squareEl.width();
-        
-        let rank = target.charAt(1);
-        let topPos = sqOffset.top;
-        
-        if (rank === '1') topPos = sqOffset.top - (sqWidth * 3);
+    const boardId = mode === 'analyzer' ? '#analyzerBoard' : (mode === 'ai' ? '#playBoard' : '#multiBoard');
+    const squareEl = $(`${boardId} .square-${target}`);
 
-        popup.css({ display: 'flex', top: topPos + 'px', left: sqOffset.left + 'px', width: sqWidth + 'px' });
-    }
+    if (!squareEl.length) return;
+
+    const popup = $('#promoPopup');
+    const sqOffset = squareEl.offset();
+    const sqWidth = squareEl.outerWidth() || 50;
+
+    const scrollX = window.scrollX || window.pageXOffset || 0;
+    const scrollY = window.scrollY || window.pageYOffset || 0;
+
+    const availableWidth = Math.max(220, window.innerWidth - 16);
+    let pieceSize = Math.floor(Math.min(sqWidth, availableWidth / 5));
+    pieceSize = Math.max(40, Math.min(60, pieceSize));
+
+    const popupWidth = pieceSize * 5;
+    const popupHeight = pieceSize;
+
+    let left = (sqOffset.left - scrollX);
+    let topPos = (sqOffset.top - scrollY) + (sqWidth / 2) - (popupHeight / 2);
+
+    left = Math.max(8, Math.min(left, window.innerWidth - popupWidth - 8));
+    topPos = Math.max(8, Math.min(topPos, window.innerHeight - popupHeight - 8));
+
+    popup.find('.promo-piece, .promo-cancel').css({
+        width: pieceSize + 'px',
+        height: pieceSize + 'px'
+    });
+
+    popup.css({
+        display: 'flex',
+        position: 'fixed',
+        top: topPos + 'px',
+        left: left + 'px',
+        width: popupWidth + 'px'
+    });
 }
 
 function cancelPromotion() {
     $('#promoPopup').css('display', 'none');
     pendingPromoMove = null;
-    if (aBoard) { updateFenUI(); aBoard.position(aBoard.position(), false); }
-    if (pBoard) pBoard.position(pGame.fen(), false);
-    if (mBoard) mBoard.position(mGame.fen(), false);
+
+    if (window.aBoard) {
+        updateFenUI();
+        aBoard.position(aBoard.position(), false);
+    }
+    if (window.pBoard && window.pGame) pBoard.position(pGame.fen(), false);
+    if (window.mBoard && window.mGame) mBoard.position(mGame.fen(), false);
 }
 
 async function executePromotion(piece) {
+    if (Date.now() - promoOpenedAt < 500) return;
+
     $('#promoPopup').css('display', 'none');
     if (!pendingPromoMove) return;
 
-    let { source, target, mode, turn } = pendingPromoMove;
+    const { source, target, mode, turn } = pendingPromoMove;
     pendingPromoMove = null;
 
     if (mode === 'analyzer') {
-        let color = turn === 'w' ? 'w' : 'b';
-        let promoPieceCode = color + piece.toUpperCase();
-        
+        const color = turn === 'w' ? 'w' : 'b';
+        const promoPieceCode = color + piece.toUpperCase();
+
         tempGame.load(generateFullFen());
-        let move = tempGame.move({ from: source, to: target, promotion: piece.toLowerCase() });
-        
+        const move = tempGame.move({ from: source, to: target, promotion: piece.toLowerCase() });
+
         if (move) {
             aBoard.position(tempGame.fen(), false);
         } else {
-            let pos = { ...aBoard.position() }; // UPDATED: Clone position
+            const pos = { ...aBoard.position() };
             delete pos[source];
             pos[target] = promoPieceCode;
             aBoard.position(pos, false);
         }
-        
+
         setTurnBasedOnMove(promoPieceCode);
         updateFenUI();
     } else if (mode === 'ai') {
-        let move = pGame.move({ from: source, to: target, promotion: piece });
+        const move = pGame.move({ from: source, to: target, promotion: piece });
         if (move) {
             pBoard.position(pGame.fen(), false);
             updateGameStatus();
             await makeEngineMove();
         }
     } else if (mode === 'multi') {
-        let move = mGame.move({ from: source, to: target, promotion: piece });
+        const move = mGame.move({ from: source, to: target, promotion: piece });
         if (move) {
             mBoard.position(mGame.fen(), false);
-            socket.send(JSON.stringify({ type: "move", source: source, target: target, promotion: piece }));
+            socket.send(JSON.stringify({
+                type: "move",
+                source: source,
+                target: target,
+                promotion: piece
+            }));
             updateMultiStatus();
             fetchEvaluationBackground(mGame.fen(), mGame.turn(), 'evalWhiteMulti', 'evalBlackMulti');
         }
@@ -163,78 +224,109 @@ var tempGame = new Chess();
 
 function setTurnBasedOnMove(pieceCode) {
     if (!pieceCode) return;
-    let wRadio = document.querySelector('input[name="turn"][value="w"]');
-    let bRadio = document.querySelector('input[name="turn"][value="b"]');
+
+    const wRadio = document.querySelector('input[name="turn"][value="w"]');
+    const bRadio = document.querySelector('input[name="turn"][value="b"]');
+
     if (pieceCode.charAt(0) === 'w') {
-        wRadio.checked = false; bRadio.checked = true;
+        wRadio.checked = false;
+        bRadio.checked = true;
     } else if (pieceCode.charAt(0) === 'b') {
-        bRadio.checked = false; wRadio.checked = true;
+        bRadio.checked = false;
+        wRadio.checked = true;
     }
 }
 
 function handleManualCastling(source, target, piece) {
-    let pos = { ...aBoard.position() }; // Clone position to be safe
+    const pos = { ...aBoard.position() };
     let changed = false;
-    if (piece === 'wK' && source === 'e1' && target === 'g1') { delete pos['h1']; pos['f1'] = 'wR'; changed = true; }
-    if (piece === 'wK' && source === 'e1' && target === 'c1') { delete pos['a1']; pos['d1'] = 'wR'; changed = true; }
-    if (piece === 'bK' && source === 'e8' && target === 'g8') { delete pos['h8']; pos['f8'] = 'bR'; changed = true; }
-    if (piece === 'bK' && source === 'e8' && target === 'c8') { delete pos['a8']; pos['d8'] = 'bR'; changed = true; }
+
+    if (piece === 'wK' && source === 'e1' && target === 'g1') {
+        delete pos['h1'];
+        pos['f1'] = 'wR';
+        changed = true;
+    }
+    if (piece === 'wK' && source === 'e1' && target === 'c1') {
+        delete pos['a1'];
+        pos['d1'] = 'wR';
+        changed = true;
+    }
+    if (piece === 'bK' && source === 'e8' && target === 'g8') {
+        delete pos['h8'];
+        pos['f8'] = 'bR';
+        changed = true;
+    }
+    if (piece === 'bK' && source === 'e8' && target === 'c8') {
+        delete pos['a8'];
+        pos['d8'] = 'bR';
+        changed = true;
+    }
+
     if (changed) aBoard.position(pos, false);
 }
 
 var aConfig = {
-    draggable: true, dropOffBoard: 'trash', sparePieces: true, position: 'start',
+    draggable: true,
+    dropOffBoard: 'trash',
+    sparePieces: true,
+    position: 'start',
     onDrop: function(source, target, piece) {
         if (source !== target && source !== 'spare' && target !== 'offboard') {
-            let isPawn = piece.charAt(1) === 'P';
-            let rank = target.charAt(1);
+            const isPawn = piece.charAt(1) === 'P';
+            const rank = target.charAt(1);
+
             if (isPawn && (rank === '8' || rank === '1')) {
                 showPromotionPopup(source, target, 'analyzer', piece.charAt(0));
-                return 'snapback'; 
+                return 'snapback';
             }
 
-            let currentPos = { ...aBoard.position() }; // UPDATED: Change A
+            const currentPos = { ...aBoard.position() };
             delete currentPos[source];
             currentPos[target] = piece;
-            aBoard.position(currentPos, false); 
-            
+            aBoard.position(currentPos, false);
+
             handleManualCastling(source, target, piece);
-            setTurnBasedOnMove(piece); 
+            setTurnBasedOnMove(piece);
             updateFenUI();
-            clearAllHighlights(); aSelectedSq = null;
+            clearAllHighlights();
+            aSelectedSq = null;
         }
     },
-    onChange: function() { clearAllHighlights(); updateFenUI(); },
+    onChange: function() {
+        clearAllHighlights();
+        updateFenUI();
+    },
     pieceTheme: PIECE_THEME
 };
+
 aBoard = Chessboard('analyzerBoard', aConfig);
 
 $('#analyzerBoard').on('mousedown touchstart', '.square-55d63', function(e) {
     if (e.type === 'mousedown' && (Date.now() - window.lastTouch < 500)) return;
     if (e.type === 'touchstart') window.lastTouch = Date.now();
 
-    let sq = $(this).attr('data-square');
+    const sq = $(this).attr('data-square');
 
     if (aSelectedSq && aSelectedSq !== sq) {
         if ($(this).hasClass('highlight-path')) {
-            let pieceMoved = aBoard.position()[aSelectedSq];
-            let isPawn = pieceMoved.charAt(1) === 'P';
-            let rank = sq.charAt(1);
-            
+            const pieceMoved = aBoard.position()[aSelectedSq];
+            const isPawn = pieceMoved.charAt(1) === 'P';
+            const rank = sq.charAt(1);
+
             if (isPawn && (rank === '8' || rank === '1')) {
                 showPromotionPopup(aSelectedSq, sq, 'analyzer', pieceMoved.charAt(0));
-                clearAllHighlights(); aSelectedSq = null;
+                clearAllHighlights();
+                aSelectedSq = null;
                 return;
             }
 
-            tempGame.load(generateFullFen()); 
-            let move = tempGame.move({ from: aSelectedSq, to: sq, promotion: 'q' });
+            tempGame.load(generateFullFen());
+            const move = tempGame.move({ from: aSelectedSq, to: sq, promotion: 'q' });
 
             if (move) {
-                // BUG FIX: Instant snap position without animation
                 aBoard.position(tempGame.fen(), false);
             } else {
-                let currentPos = { ...aBoard.position() }; // UPDATED: Change B
+                const currentPos = { ...aBoard.position() };
                 delete currentPos[aSelectedSq];
                 currentPos[sq] = pieceMoved;
                 aBoard.position(currentPos, false);
@@ -243,104 +335,113 @@ $('#analyzerBoard').on('mousedown touchstart', '.square-55d63', function(e) {
 
             setTurnBasedOnMove(pieceMoved);
             updateFenUI();
-            clearAllHighlights(); aSelectedSq = null;
+            clearAllHighlights();
+            aSelectedSq = null;
             return;
         }
     }
 
-    clearAllHighlights(); aSelectedSq = null;
-    let piece = aBoard.position()[sq];
+    clearAllHighlights();
+    aSelectedSq = null;
 
+    const piece = aBoard.position()[sq];
     if (piece) {
         aSelectedSq = sq;
         $(this).addClass('highlight-blue');
-        
-        let loaded = tempGame.load(generateFullFen());
-        if(loaded) {
-            let moves = tempGame.moves({ square: sq, verbose: true });
+
+        const loaded = tempGame.load(generateFullFen());
+        if (loaded) {
+            const moves = tempGame.moves({ square: sq, verbose: true });
             moves.forEach(m => $('#analyzerBoard .square-' + m.to).addClass('highlight-path'));
         }
     }
 });
 
 function generateFullFen() {
-    let pos = aBoard.fen();
-    let turn = document.querySelector('input[name="turn"]:checked').value;
-    let boardState = aBoard.position(); 
+    const pos = aBoard.fen();
+    const turn = document.querySelector('input[name="turn"]:checked').value;
+    const boardState = aBoard.position();
+
     let castling = '';
-    if(document.getElementById('cwK').checked && boardState['e1'] === 'wK' && boardState['h1'] === 'wR') castling += 'K';
-    if(document.getElementById('cwQ').checked && boardState['e1'] === 'wK' && boardState['a1'] === 'wR') castling += 'Q';
-    if(document.getElementById('cbK').checked && boardState['e8'] === 'bK' && boardState['h8'] === 'bR') castling += 'k';
-    if(document.getElementById('cbQ').checked && boardState['e8'] === 'bK' && boardState['a8'] === 'bR') castling += 'q';
-    if(castling === '') castling = '-';
+    if (document.getElementById('cwK').checked && boardState['e1'] === 'wK' && boardState['h1'] === 'wR') castling += 'K';
+    if (document.getElementById('cwQ').checked && boardState['e1'] === 'wK' && boardState['a1'] === 'wR') castling += 'Q';
+    if (document.getElementById('cbK').checked && boardState['e8'] === 'bK' && boardState['h8'] === 'bR') castling += 'k';
+    if (document.getElementById('cbQ').checked && boardState['e8'] === 'bK' && boardState['a8'] === 'bR') castling += 'q';
+
+    if (castling === '') castling = '-';
     return pos + ' ' + turn + ' ' + castling + ' - 0 1';
 }
 
-function updateFenUI() { document.getElementById('fenInput').value = generateFullFen(); }
+function updateFenUI() {
+    const fenInput = document.getElementById('fenInput');
+    if (fenInput) fenInput.value = generateFullFen();
+}
 
 async function calculateAnalyzer() {
-    let btn = document.getElementById('calcBtn');
+    const btn = document.getElementById('calcBtn');
     btn.innerText = "Processing...";
     btn.style.background = "#d97706";
-    
-    let timeOutField = document.getElementById('analyzerTimeOut');
-    if (timeOutField) timeOutField.value = "Thinking..."; 
+
+    const timeOutField = document.getElementById('analyzerTimeOut');
+    if (timeOutField) timeOutField.value = "Thinking...";
+
     clearAllHighlights();
 
-    let startTime = performance.now(); 
+    const startTime = performance.now();
 
     try {
-        let response = await fetch(API_URL, {
+        const response = await fetch(API_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fen_string: generateFullFen(), think_time: 1 }) 
+            body: JSON.stringify({ fen_string: generateFullFen(), think_time: 1 })
         });
-        
-        let data = await response.json();
-        let endTime = performance.now();
-        let timeTaken = ((endTime - startTime) / 1000).toFixed(2);
-        
+
+        const data = await response.json();
+        const endTime = performance.now();
+        const timeTaken = ((endTime - startTime) / 1000).toFixed(2);
+
         if (timeOutField) timeOutField.value = timeTaken + " s";
 
         document.getElementById('bestMoveOut').innerText = data.best_move || "None";
         document.getElementById('scoreOut').innerText = data.score;
         document.getElementById('depthOut').innerText = data.depth + "+";
 
-        let currentTurn = document.querySelector('input[name="turn"]:checked').value;
-        let isMate = typeof data.score === 'string' && data.score.includes('Mate');
+        const currentTurn = document.querySelector('input[name="turn"]:checked').value;
+        const isMate = typeof data.score === 'string' && data.score.includes('Mate');
         updateEvalBar(data.score, isMate ? 'mate' : 'cp', currentTurn, 'evalWhite', 'evalBlack');
 
         if (data.best_move) {
-            let action = document.querySelector('input[name="action"]:checked').value;
-            let fromSq = data.best_move.substring(0,2);
-            let toSq = data.best_move.substring(2,4);
+            const action = document.querySelector('input[name="action"]:checked').value;
+            const fromSq = data.best_move.substring(0, 2);
+            const toSq = data.best_move.substring(2, 4);
 
-            if(action === 'make') {
-                let pieceMoved = aBoard.position()[fromSq];
-                
+            if (action === 'make') {
+                const pieceMoved = aBoard.position()[fromSq];
+
                 tempGame.load(generateFullFen());
-                let move = tempGame.move({ from: fromSq, to: toSq, promotion: 'q' });
+                const move = tempGame.move({ from: fromSq, to: toSq, promotion: 'q' });
 
                 if (move) {
                     aBoard.position(tempGame.fen(), false);
                 } else {
-                    let currentPos = { ...aBoard.position() }; // UPDATED: Change C
+                    const currentPos = { ...aBoard.position() };
                     delete currentPos[fromSq];
                     currentPos[toSq] = pieceMoved;
                     aBoard.position(currentPos, false);
                     setTimeout(() => handleManualCastling(fromSq, toSq, pieceMoved), 2);
                 }
 
-                if(pieceMoved) setTurnBasedOnMove(pieceMoved);
+                if (pieceMoved) setTurnBasedOnMove(pieceMoved);
                 updateFenUI();
             } else {
                 $('#analyzerBoard .square-' + fromSq).addClass('highlight-blue');
                 $('#analyzerBoard .square-' + toSq).addClass('highlight-red');
             }
         }
-    } catch (error) { 
-        alert("Server issue! Please try again."); 
+    } catch (error) {
+        alert("Server issue! Please try again.");
     }
+
     btn.innerText = "Analyze Position";
     btn.style.background = "#2563eb";
 }
@@ -352,60 +453,79 @@ var pBoard = null;
 var pGame = new Chess();
 var pSelectedSq = null;
 
-function pOnDragStart (source, piece) { if (pGame.game_over() || piece.search(/^b/) !== -1) return false; }
+function pOnDragStart(source, piece) {
+    if (pGame.game_over() || piece.search(/^b/) !== -1) return false;
+}
 
-async function pOnDrop (source, target) {
-    let moves = pGame.moves({ verbose: true });
-    let isPromo = moves.some(m => m.from === source && m.to === target && m.flags.includes('p'));
-    
+async function pOnDrop(source, target) {
+    const moves = pGame.moves({ verbose: true });
+    const isPromo = moves.some(m => m.from === source && m.to === target && m.flags.includes('p'));
+
     if (isPromo) {
         showPromotionPopup(source, target, 'ai', pGame.turn());
-        return 'snapback'; 
+        return 'snapback';
     }
 
-    var move = pGame.move({ from: source, to: target, promotion: 'q' });
-    if (move === null) return 'snapback'; 
-    clearAllHighlights(); pSelectedSq = null;
+    const move = pGame.move({ from: source, to: target, promotion: 'q' });
+    if (move === null) return 'snapback';
+
+    clearAllHighlights();
+    pSelectedSq = null;
     updateGameStatus();
     await makeEngineMove();
 }
 
-function pOnSnapEnd () { pBoard.position(pGame.fen()); }
+function pOnSnapEnd() {
+    pBoard.position(pGame.fen());
+}
 
-var pConfig = { draggable: true, position: 'start', pieceTheme: PIECE_THEME, onDragStart: pOnDragStart, onDrop: pOnDrop, onSnapEnd: pOnSnapEnd };
+var pConfig = {
+    draggable: true,
+    position: 'start',
+    pieceTheme: PIECE_THEME,
+    onDragStart: pOnDragStart,
+    onDrop: pOnDrop,
+    onSnapEnd: pOnSnapEnd
+};
+
 pBoard = Chessboard('playBoard', pConfig);
 
 $('#playBoard').on('mousedown touchstart', '.square-55d63', async function(e) {
     if (e.type === 'mousedown' && (Date.now() - window.lastTouch < 500)) return;
     if (e.type === 'touchstart') window.lastTouch = Date.now();
 
-    if (pGame.game_over() || pGame.turn() === 'b') return; 
-    let sq = $(this).attr('data-square');
-    
+    if (pGame.game_over() || pGame.turn() === 'b') return;
+
+    const sq = $(this).attr('data-square');
+
     if (pSelectedSq && $(this).hasClass('highlight-path')) {
-        let moves = pGame.moves({ verbose: true });
-        let isPromo = moves.some(m => m.from === pSelectedSq && m.to === sq && m.flags.includes('p'));
-        
+        const moves = pGame.moves({ verbose: true });
+        const isPromo = moves.some(m => m.from === pSelectedSq && m.to === sq && m.flags.includes('p'));
+
         if (isPromo) {
             showPromotionPopup(pSelectedSq, sq, 'ai', pGame.turn());
-            clearAllHighlights(); pSelectedSq = null;
+            clearAllHighlights();
+            pSelectedSq = null;
             return;
         }
 
-        let move = pGame.move({ from: pSelectedSq, to: sq, promotion: 'q' });
+        const move = pGame.move({ from: pSelectedSq, to: sq, promotion: 'q' });
         if (move) {
-            // BUG FIX: Instant snap position
-            pBoard.position(pGame.fen(), false); 
-            clearAllHighlights(); pSelectedSq = null;
+            pBoard.position(pGame.fen(), false);
+            clearAllHighlights();
+            pSelectedSq = null;
             updateGameStatus();
             await makeEngineMove();
         }
         return;
     }
-    clearAllHighlights(); pSelectedSq = null;
-    let piece = pGame.get(sq);
+
+    clearAllHighlights();
+    pSelectedSq = null;
+
+    const piece = pGame.get(sq);
     if (piece && piece.color === 'w') {
-        let moves = pGame.moves({ square: sq, verbose: true });
+        const moves = pGame.moves({ square: sq, verbose: true });
         if (moves.length > 0) {
             pSelectedSq = sq;
             $(this).addClass('highlight-blue');
@@ -416,49 +536,56 @@ $('#playBoard').on('mousedown touchstart', '.square-55d63', async function(e) {
 
 async function makeEngineMove() {
     document.getElementById('gameStatus').innerText = "AI is thinking...";
-    
-    let playTimeField = document.getElementById('playTimeOut');
+
+    const playTimeField = document.getElementById('playTimeOut');
     if (playTimeField) playTimeField.value = "Thinking...";
-    
-    let startTime = performance.now(); 
+
+    const startTime = performance.now();
 
     try {
-        let fenToEvaluate = pGame.fen();
-        let turnToEvaluate = pGame.turn();
-        
-        let response = await fetch(API_URL, {
+        const fenToEvaluate = pGame.fen();
+        const turnToEvaluate = pGame.turn();
+
+        const response = await fetch(API_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ fen_string: fenToEvaluate, think_time: 1 })
         });
-        let data = await response.json();
-        
-        let endTime = performance.now(); 
-        let timeTaken = ((endTime - startTime) / 1000).toFixed(2);
-        
-        if (playTimeField) playTimeField.value = timeTaken + " s"; 
 
-        let isMate = typeof data.score === 'string' && data.score.includes('Mate');
+        const data = await response.json();
+
+        const endTime = performance.now();
+        const timeTaken = ((endTime - startTime) / 1000).toFixed(2);
+
+        if (playTimeField) playTimeField.value = timeTaken + " s";
+
+        const isMate = typeof data.score === 'string' && data.score.includes('Mate');
         updateEvalBar(data.score, isMate ? 'mate' : 'cp', turnToEvaluate, 'evalWhitePlay', 'evalBlackPlay');
 
-        if(data.best_move) {
-            pGame.move({ from: data.best_move.substring(0,2), to: data.best_move.substring(2,4), promotion: 'q' });
-            // BUG FIX (AI Move): Instant snap position
-            pBoard.position(pGame.fen(), false); 
-            
+        if (data.best_move) {
+            pGame.move({
+                from: data.best_move.substring(0, 2),
+                to: data.best_move.substring(2, 4),
+                promotion: 'q'
+            });
+
+            pBoard.position(pGame.fen(), false);
             fetchEvaluationBackground(pGame.fen(), pGame.turn(), 'evalWhitePlay', 'evalBlackPlay');
         }
-    } catch(e) {}
+    } catch (e) {
+        // silent fail
+    }
+
     updateGameStatus();
 }
 
 function updateGameStatus() {
     let statusText = "Your Turn (White)";
-    let overlay = document.getElementById('aiResultOverlay');
+    const overlay = document.getElementById('aiResultOverlay');
     overlay.style.display = 'none';
 
     if (pGame.in_checkmate()) {
-        let winner = pGame.turn() === 'w' ? "AI Wins!" : "You Win!";
+        const winner = pGame.turn() === 'w' ? "AI Wins!" : "You Win!";
         statusText = "Game Over - Checkmate!";
         overlay.innerText = winner;
         overlay.style.display = 'flex';
@@ -469,21 +596,22 @@ function updateGameStatus() {
     } else if (pGame.turn() === 'b') {
         statusText = "AI is thinking...";
     }
-    
+
     document.getElementById('gameStatus').innerText = statusText;
     document.getElementById('moveHistory').innerText = pGame.pgn() || "No moves yet.";
 }
 
-function startNewGame() { 
-    pGame.reset(); pBoard.start(); 
-    clearAllHighlights(); 
+function startNewGame() {
+    pGame.reset();
+    pBoard.start();
+    clearAllHighlights();
     document.getElementById('aiResultOverlay').style.display = 'none';
-    
-    let playTimeField = document.getElementById('playTimeOut');
-    if(playTimeField) playTimeField.value = "0.00 s";
-    
+
+    const playTimeField = document.getElementById('playTimeOut');
+    if (playTimeField) playTimeField.value = "0.00 s";
+
     resetEvalBar('evalWhitePlay', 'evalBlackPlay');
-    updateGameStatus(); 
+    updateGameStatus();
 }
 
 // ==========================================
@@ -492,35 +620,48 @@ function startNewGame() {
 var mBoard = null;
 var mGame = new Chess();
 var socket = null;
-var myPlayerColor = null; 
+var myPlayerColor = null;
 var roomActive = false;
 var mSelectedSq = null;
 
 var mConfig = {
-    draggable: true, position: 'start', pieceTheme: PIECE_THEME,
+    draggable: true,
+    position: 'start',
+    pieceTheme: PIECE_THEME,
     onDragStart: function(source, piece) {
         if (!roomActive || mGame.game_over()) return false;
         if ((mGame.turn() === 'w' && piece.search(/^b/) !== -1) || (mGame.turn() === 'b' && piece.search(/^w/) !== -1)) return false;
         if (mGame.turn() !== myPlayerColor) return false;
     },
     onDrop: function(source, target) {
-        let moves = mGame.moves({ verbose: true });
-        let isPromo = moves.some(m => m.from === source && m.to === target && m.flags.includes('p'));
-        
+        const moves = mGame.moves({ verbose: true });
+        const isPromo = moves.some(m => m.from === source && m.to === target && m.flags.includes('p'));
+
         if (isPromo) {
             showPromotionPopup(source, target, 'multi', mGame.turn());
             return 'snapback';
         }
 
-        var move = mGame.move({ from: source, to: target, promotion: 'q' });
+        const move = mGame.move({ from: source, to: target, promotion: 'q' });
         if (move === null) return 'snapback';
-        socket.send(JSON.stringify({ type: "move", source: source, target: target, promotion: 'q' }));
+
+        socket.send(JSON.stringify({
+            type: "move",
+            source: source,
+            target: target,
+            promotion: 'q'
+        }));
+
         updateMultiStatus();
-        clearAllHighlights(); mSelectedSq = null;
+        clearAllHighlights();
+        mSelectedSq = null;
         fetchEvaluationBackground(mGame.fen(), mGame.turn(), 'evalWhiteMulti', 'evalBlackMulti');
     },
-    onSnapEnd: function() { mBoard.position(mGame.fen()); }
+    onSnapEnd: function() {
+        mBoard.position(mGame.fen());
+    }
 };
+
 mBoard = Chessboard('multiBoard', mConfig);
 
 $('#multiBoard').on('mousedown touchstart', '.square-55d63', function(e) {
@@ -528,33 +669,43 @@ $('#multiBoard').on('mousedown touchstart', '.square-55d63', function(e) {
     if (e.type === 'touchstart') window.lastTouch = Date.now();
 
     if (!roomActive || mGame.game_over() || mGame.turn() !== myPlayerColor) return;
-    let sq = $(this).attr('data-square');
-    
+
+    const sq = $(this).attr('data-square');
+
     if (mSelectedSq && $(this).hasClass('highlight-path')) {
-        let moves = mGame.moves({ verbose: true });
-        let isPromo = moves.some(m => m.from === mSelectedSq && m.to === sq && m.flags.includes('p'));
-        
+        const moves = mGame.moves({ verbose: true });
+        const isPromo = moves.some(m => m.from === mSelectedSq && m.to === sq && m.flags.includes('p'));
+
         if (isPromo) {
             showPromotionPopup(mSelectedSq, sq, 'multi', mGame.turn());
-            clearAllHighlights(); mSelectedSq = null;
+            clearAllHighlights();
+            mSelectedSq = null;
             return;
         }
 
-        let move = mGame.move({ from: mSelectedSq, to: sq, promotion: 'q' });
+        const move = mGame.move({ from: mSelectedSq, to: sq, promotion: 'q' });
         if (move) {
-            // BUG FIX: Instant snap position
-            mBoard.position(mGame.fen(), false); 
-            socket.send(JSON.stringify({ type: "move", source: mSelectedSq, target: sq, promotion: 'q' }));
+            mBoard.position(mGame.fen(), false);
+            socket.send(JSON.stringify({
+                type: "move",
+                source: mSelectedSq,
+                target: sq,
+                promotion: 'q'
+            }));
             updateMultiStatus();
-            clearAllHighlights(); mSelectedSq = null;
+            clearAllHighlights();
+            mSelectedSq = null;
             fetchEvaluationBackground(mGame.fen(), mGame.turn(), 'evalWhiteMulti', 'evalBlackMulti');
         }
         return;
     }
-    clearAllHighlights(); mSelectedSq = null;
-    let piece = mGame.get(sq);
+
+    clearAllHighlights();
+    mSelectedSq = null;
+
+    const piece = mGame.get(sq);
     if (piece && piece.color === myPlayerColor) {
-        let moves = mGame.moves({ square: sq, verbose: true });
+        const moves = mGame.moves({ square: sq, verbose: true });
         if (moves.length > 0) {
             mSelectedSq = sq;
             $(this).addClass('highlight-blue');
@@ -565,57 +716,59 @@ $('#multiBoard').on('mousedown touchstart', '.square-55d63', function(e) {
 
 function connectToRoom(roomId, isCreator) {
     socket = new WebSocket(WS_URL + roomId);
+
     socket.onopen = function() {
         document.getElementById('roomControls').style.display = 'none';
         document.getElementById('roomInfo').style.display = 'block';
-        document.getElementById('multiActions').style.display = 'flex'; 
+        document.getElementById('multiActions').style.display = 'flex';
         document.getElementById('displayRoomCode').innerText = roomId;
         document.getElementById('multiStatus').innerText = "Waiting for friend to join...";
         document.getElementById('multiResultOverlay').style.display = 'none';
     };
 
     socket.onmessage = function(event) {
-        let data = JSON.parse(event.data);
+        const data = JSON.parse(event.data);
+
         if (data.type === 'start') {
             roomActive = true;
-            mGame.reset(); mBoard.start();
+            mGame.reset();
+            mBoard.start();
             updateMultiStatus();
             document.getElementById('multiEvalContainer').style.display = 'flex';
             resetEvalBar('evalWhiteMulti', 'evalBlackMulti');
-        } 
-        else if (data.type === 'move') {
+        } else if (data.type === 'move') {
             mGame.move({ from: data.source, to: data.target, promotion: data.promotion });
-            // BUG FIX (Socket Move): Instant snap position
-            mBoard.position(mGame.fen(), false); 
+            mBoard.position(mGame.fen(), false);
             updateMultiStatus();
             fetchEvaluationBackground(mGame.fen(), mGame.turn(), 'evalWhiteMulti', 'evalBlackMulti');
-        } 
-        else if (data.type === 'disconnect') {
+        } else if (data.type === 'disconnect') {
             roomActive = false;
             document.getElementById('multiStatus').innerText = data.message;
-            document.getElementById('multiStatus').style.color = "#10b981"; 
-            
-            let overlay = document.getElementById('multiResultOverlay');
+            document.getElementById('multiStatus').style.color = "#10b981";
+
+            const overlay = document.getElementById('multiResultOverlay');
             overlay.innerText = "Opponent Left";
             overlay.style.display = 'flex';
-        }
-        else if (data.type === 'error') {
+        } else if (data.type === 'error') {
             alert(data.message);
-            exitRoom(); 
+            exitRoom();
         }
     };
 }
 
 function createRoom() {
-    let roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
     myPlayerColor = 'w';
     mBoard.orientation('white');
     connectToRoom(roomId, true);
 }
 
 function joinRoom() {
-    let roomId = document.getElementById('joinRoomCode').value.toUpperCase().trim();
-    if (roomId.length !== 6) { alert("Invalid code."); return; }
+    const roomId = document.getElementById('joinRoomCode').value.toUpperCase().trim();
+    if (roomId.length !== 6) {
+        alert("Invalid code.");
+        return;
+    }
     myPlayerColor = 'b';
     mBoard.orientation('black');
     connectToRoom(roomId, false);
@@ -623,12 +776,13 @@ function joinRoom() {
 
 function updateMultiStatus() {
     if (!roomActive) return;
+
     let statusText = "";
-    let overlay = document.getElementById('multiResultOverlay');
+    const overlay = document.getElementById('multiResultOverlay');
     overlay.style.display = 'none';
 
     if (mGame.in_checkmate()) {
-        let winnerText = mGame.turn() === 'w' ? "Black Wins!" : "White Wins!";
+        const winnerText = mGame.turn() === 'w' ? "Black Wins!" : "White Wins!";
         statusText = "Checkmate! " + winnerText;
         overlay.innerText = (mGame.turn() === myPlayerColor) ? "You Lose!" : "You Win!";
         overlay.style.display = 'flex';
@@ -640,26 +794,28 @@ function updateMultiStatus() {
         if (mGame.turn() === myPlayerColor) statusText = "Your Turn to move!";
         else statusText = "Friend's turn... waiting.";
     }
+
     document.getElementById('multiStatus').innerText = statusText;
 }
 
 function resignGame(mode) {
     if (!confirm("Are you sure you want to resign?")) return;
-    
+
     if (mode === 'ai') {
         document.getElementById('gameStatus').innerText = "You Resigned. AI Wins!";
-        let overlay = document.getElementById('aiResultOverlay');
+        const overlay = document.getElementById('aiResultOverlay');
         overlay.innerText = "AI Wins!";
         overlay.style.display = 'flex';
-        pGame.clear(); pBoard.clear(); 
+        pGame.clear();
+        pBoard.clear();
     } else if (mode === 'multi') {
         if (socket && roomActive) {
             socket.send(JSON.stringify({ type: "resign" }));
             roomActive = false;
             document.getElementById('multiStatus').innerText = "You Resigned. You lose.";
             document.getElementById('multiStatus').style.color = "#ef4444";
-            
-            let overlay = document.getElementById('multiResultOverlay');
+
+            const overlay = document.getElementById('multiResultOverlay');
             overlay.innerText = "You Resigned";
             overlay.style.display = 'flex';
         }
@@ -668,13 +824,14 @@ function resignGame(mode) {
 
 function exitRoom() {
     if (socket) {
-        socket.close(); 
+        socket.close();
         socket = null;
     }
+
     roomActive = false;
     mGame.reset();
     mBoard.start();
-    
+
     document.getElementById('roomControls').style.display = 'flex';
     document.getElementById('roomInfo').style.display = 'none';
     document.getElementById('multiActions').style.display = 'none';
@@ -684,5 +841,6 @@ function exitRoom() {
     document.getElementById('multiEvalContainer').style.display = 'none';
 }
 
+// Initial eval bar reset
 resetEvalBar('evalWhite', 'evalBlack');
 resetEvalBar('evalWhitePlay', 'evalBlackPlay');
