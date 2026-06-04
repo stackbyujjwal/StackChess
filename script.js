@@ -21,7 +21,9 @@ const WS_URL = 'wss://stackbyujjwal1-stackchess.hf.space/ws/';
 const PIECE_THEME = 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png';
 window.lastTouch = 0;
 
-function clearAllHighlights() { $('.square-55d63').removeClass('highlight-blue highlight-red highlight-path'); }
+function clearAllHighlights() { 
+    $('.square-55d63').removeClass('highlight-blue highlight-red highlight-path'); 
+}
 
 function copyPGN(gameInstance) {
     let pgn = gameInstance.pgn();
@@ -71,7 +73,7 @@ async function fetchEvaluationBackground(fen, turn, whiteId, blackId) {
 }
 
 // ==========================================
-// VISUAL PAWN PROMOTION LOGIC (INLINE FIX)
+// VISUAL PAWN PROMOTION LOGIC
 // ==========================================
 var pendingPromoMove = null;
 
@@ -104,9 +106,9 @@ function showPromotionPopup(source, target, mode, turn) {
 function cancelPromotion() {
     $('#promoPopup').css('display', 'none');
     pendingPromoMove = null;
-    if (aBoard) { updateFenUI(); aBoard.position(aBoard.position()); }
-    if (pBoard) pBoard.position(pGame.fen());
-    if (mBoard) mBoard.position(mGame.fen());
+    if (aBoard) { updateFenUI(); aBoard.position(aBoard.position(), false); }
+    if (pBoard) pBoard.position(pGame.fen(), false);
+    if (mBoard) mBoard.position(mGame.fen(), false);
 }
 
 async function executePromotion(piece) {
@@ -119,23 +121,32 @@ async function executePromotion(piece) {
     if (mode === 'analyzer') {
         let color = turn === 'w' ? 'w' : 'b';
         let promoPieceCode = color + piece.toUpperCase();
-        let pos = aBoard.position();
-        delete pos[source];
-        pos[target] = promoPieceCode;
-        aBoard.position(pos, false);
-        toggleTurn();
+        
+        tempGame.load(generateFullFen());
+        let move = tempGame.move({ from: source, to: target, promotion: piece.toLowerCase() });
+        
+        if (move) {
+            aBoard.position(tempGame.fen(), false);
+        } else {
+            let pos = { ...aBoard.position() }; // UPDATED: Clone position
+            delete pos[source];
+            pos[target] = promoPieceCode;
+            aBoard.position(pos, false);
+        }
+        
+        setTurnBasedOnMove(promoPieceCode);
         updateFenUI();
     } else if (mode === 'ai') {
         let move = pGame.move({ from: source, to: target, promotion: piece });
         if (move) {
-            pBoard.position(pGame.fen());
+            pBoard.position(pGame.fen(), false);
             updateGameStatus();
             await makeEngineMove();
         }
     } else if (mode === 'multi') {
         let move = mGame.move({ from: source, to: target, promotion: piece });
         if (move) {
-            mBoard.position(mGame.fen());
+            mBoard.position(mGame.fen(), false);
             socket.send(JSON.stringify({ type: "move", source: source, target: target, promotion: piece }));
             updateMultiStatus();
             fetchEvaluationBackground(mGame.fen(), mGame.turn(), 'evalWhiteMulti', 'evalBlackMulti');
@@ -150,18 +161,25 @@ var aBoard = null;
 var aSelectedSq = null;
 var tempGame = new Chess();
 
-function toggleTurn() {
+function setTurnBasedOnMove(pieceCode) {
+    if (!pieceCode) return;
     let wRadio = document.querySelector('input[name="turn"][value="w"]');
     let bRadio = document.querySelector('input[name="turn"][value="b"]');
-    if (wRadio.checked) { wRadio.checked = false; bRadio.checked = true; } 
-    else { bRadio.checked = false; wRadio.checked = true; }
+    if (pieceCode.charAt(0) === 'w') {
+        wRadio.checked = false; bRadio.checked = true;
+    } else if (pieceCode.charAt(0) === 'b') {
+        bRadio.checked = false; wRadio.checked = true;
+    }
 }
 
 function handleManualCastling(source, target, piece) {
-    if (piece === 'wK' && source === 'e1' && target === 'g1') aBoard.move('h1-f1');
-    if (piece === 'wK' && source === 'e1' && target === 'c1') aBoard.move('a1-d1');
-    if (piece === 'bK' && source === 'e8' && target === 'g8') aBoard.move('h8-f8');
-    if (piece === 'bK' && source === 'e8' && target === 'c8') aBoard.move('a8-d8');
+    let pos = { ...aBoard.position() }; // Clone position to be safe
+    let changed = false;
+    if (piece === 'wK' && source === 'e1' && target === 'g1') { delete pos['h1']; pos['f1'] = 'wR'; changed = true; }
+    if (piece === 'wK' && source === 'e1' && target === 'c1') { delete pos['a1']; pos['d1'] = 'wR'; changed = true; }
+    if (piece === 'bK' && source === 'e8' && target === 'g8') { delete pos['h8']; pos['f8'] = 'bR'; changed = true; }
+    if (piece === 'bK' && source === 'e8' && target === 'c8') { delete pos['a8']; pos['d8'] = 'bR'; changed = true; }
+    if (changed) aBoard.position(pos, false);
 }
 
 var aConfig = {
@@ -175,8 +193,13 @@ var aConfig = {
                 return 'snapback'; 
             }
 
+            let currentPos = { ...aBoard.position() }; // UPDATED: Change A
+            delete currentPos[source];
+            currentPos[target] = piece;
+            aBoard.position(currentPos, false); 
+            
             handleManualCastling(source, target, piece);
-            toggleTurn(); 
+            setTurnBasedOnMove(piece); 
             updateFenUI();
             clearAllHighlights(); aSelectedSq = null;
         }
@@ -194,19 +217,32 @@ $('#analyzerBoard').on('mousedown touchstart', '.square-55d63', function(e) {
 
     if (aSelectedSq && aSelectedSq !== sq) {
         if ($(this).hasClass('highlight-path')) {
-            let piece = aBoard.position()[aSelectedSq];
-            let isPawn = piece.charAt(1) === 'P';
+            let pieceMoved = aBoard.position()[aSelectedSq];
+            let isPawn = pieceMoved.charAt(1) === 'P';
             let rank = sq.charAt(1);
             
             if (isPawn && (rank === '8' || rank === '1')) {
-                showPromotionPopup(aSelectedSq, sq, 'analyzer', piece.charAt(0));
+                showPromotionPopup(aSelectedSq, sq, 'analyzer', pieceMoved.charAt(0));
                 clearAllHighlights(); aSelectedSq = null;
                 return;
             }
 
-            aBoard.move(aSelectedSq + '-' + sq);
-            handleManualCastling(aSelectedSq, sq, aBoard.position()[sq]);
-            toggleTurn(); updateFenUI();
+            tempGame.load(generateFullFen()); 
+            let move = tempGame.move({ from: aSelectedSq, to: sq, promotion: 'q' });
+
+            if (move) {
+                // BUG FIX: Instant snap position without animation
+                aBoard.position(tempGame.fen(), false);
+            } else {
+                let currentPos = { ...aBoard.position() }; // UPDATED: Change B
+                delete currentPos[aSelectedSq];
+                currentPos[sq] = pieceMoved;
+                aBoard.position(currentPos, false);
+                setTimeout(() => handleManualCastling(aSelectedSq, sq, pieceMoved), 2);
+            }
+
+            setTurnBasedOnMove(pieceMoved);
+            updateFenUI();
             clearAllHighlights(); aSelectedSq = null;
             return;
         }
@@ -247,12 +283,11 @@ async function calculateAnalyzer() {
     btn.innerText = "Processing...";
     btn.style.background = "#d97706";
     
-    // Live Timer Update Start
     let timeOutField = document.getElementById('analyzerTimeOut');
     if (timeOutField) timeOutField.value = "Thinking..."; 
     clearAllHighlights();
 
-    let startTime = performance.now(); // ⏱️ TIMER START
+    let startTime = performance.now(); 
 
     try {
         let response = await fetch(API_URL, {
@@ -262,11 +297,10 @@ async function calculateAnalyzer() {
         });
         
         let data = await response.json();
+        let endTime = performance.now();
+        let timeTaken = ((endTime - startTime) / 1000).toFixed(2);
         
-        let endTime = performance.now(); // ⏱️ TIMER END
-        let timeTaken = ((endTime - startTime) / 1000).toFixed(2); // Calculate Seconds
-        
-        if (timeOutField) timeOutField.value = timeTaken + " s"; // Exact Time Update
+        if (timeOutField) timeOutField.value = timeTaken + " s";
 
         document.getElementById('bestMoveOut').innerText = data.best_move || "None";
         document.getElementById('scoreOut').innerText = data.score;
@@ -282,9 +316,23 @@ async function calculateAnalyzer() {
             let toSq = data.best_move.substring(2,4);
 
             if(action === 'make') {
-                aBoard.move(fromSq + '-' + toSq);
-                handleManualCastling(fromSq, toSq, aBoard.position()[toSq]);
-                toggleTurn(); updateFenUI();
+                let pieceMoved = aBoard.position()[fromSq];
+                
+                tempGame.load(generateFullFen());
+                let move = tempGame.move({ from: fromSq, to: toSq, promotion: 'q' });
+
+                if (move) {
+                    aBoard.position(tempGame.fen(), false);
+                } else {
+                    let currentPos = { ...aBoard.position() }; // UPDATED: Change C
+                    delete currentPos[fromSq];
+                    currentPos[toSq] = pieceMoved;
+                    aBoard.position(currentPos, false);
+                    setTimeout(() => handleManualCastling(fromSq, toSq, pieceMoved), 2);
+                }
+
+                if(pieceMoved) setTurnBasedOnMove(pieceMoved);
+                updateFenUI();
             } else {
                 $('#analyzerBoard .square-' + fromSq).addClass('highlight-blue');
                 $('#analyzerBoard .square-' + toSq).addClass('highlight-red');
@@ -346,7 +394,8 @@ $('#playBoard').on('mousedown touchstart', '.square-55d63', async function(e) {
 
         let move = pGame.move({ from: pSelectedSq, to: sq, promotion: 'q' });
         if (move) {
-            pBoard.position(pGame.fen());
+            // BUG FIX: Instant snap position
+            pBoard.position(pGame.fen(), false); 
             clearAllHighlights(); pSelectedSq = null;
             updateGameStatus();
             await makeEngineMove();
@@ -369,9 +418,9 @@ async function makeEngineMove() {
     document.getElementById('gameStatus').innerText = "AI is thinking...";
     
     let playTimeField = document.getElementById('playTimeOut');
-    if (playTimeField) playTimeField.value = "Thinking..."; // Live Status
+    if (playTimeField) playTimeField.value = "Thinking...";
     
-    let startTime = performance.now(); // ⏱️ TIMER START
+    let startTime = performance.now(); 
 
     try {
         let fenToEvaluate = pGame.fen();
@@ -384,17 +433,18 @@ async function makeEngineMove() {
         });
         let data = await response.json();
         
-        let endTime = performance.now(); // ⏱️ TIMER END
-        let timeTaken = ((endTime - startTime) / 1000).toFixed(2); // Calculate seconds
+        let endTime = performance.now(); 
+        let timeTaken = ((endTime - startTime) / 1000).toFixed(2);
         
-        if (playTimeField) playTimeField.value = timeTaken + " s"; // Exact Time Update
+        if (playTimeField) playTimeField.value = timeTaken + " s"; 
 
         let isMate = typeof data.score === 'string' && data.score.includes('Mate');
         updateEvalBar(data.score, isMate ? 'mate' : 'cp', turnToEvaluate, 'evalWhitePlay', 'evalBlackPlay');
 
         if(data.best_move) {
             pGame.move({ from: data.best_move.substring(0,2), to: data.best_move.substring(2,4), promotion: 'q' });
-            pBoard.position(pGame.fen());
+            // BUG FIX (AI Move): Instant snap position
+            pBoard.position(pGame.fen(), false); 
             
             fetchEvaluationBackground(pGame.fen(), pGame.turn(), 'evalWhitePlay', 'evalBlackPlay');
         }
@@ -492,7 +542,8 @@ $('#multiBoard').on('mousedown touchstart', '.square-55d63', function(e) {
 
         let move = mGame.move({ from: mSelectedSq, to: sq, promotion: 'q' });
         if (move) {
-            mBoard.position(mGame.fen());
+            // BUG FIX: Instant snap position
+            mBoard.position(mGame.fen(), false); 
             socket.send(JSON.stringify({ type: "move", source: mSelectedSq, target: sq, promotion: 'q' }));
             updateMultiStatus();
             clearAllHighlights(); mSelectedSq = null;
@@ -534,7 +585,8 @@ function connectToRoom(roomId, isCreator) {
         } 
         else if (data.type === 'move') {
             mGame.move({ from: data.source, to: data.target, promotion: data.promotion });
-            mBoard.position(mGame.fen());
+            // BUG FIX (Socket Move): Instant snap position
+            mBoard.position(mGame.fen(), false); 
             updateMultiStatus();
             fetchEvaluationBackground(mGame.fen(), mGame.turn(), 'evalWhiteMulti', 'evalBlackMulti');
         } 
