@@ -3,6 +3,7 @@ function resizeAllBoards() {
     if (window.aBoard) aBoard.resize();
     if (window.pBoard) pBoard.resize();
     if (window.mBoard) mBoard.resize();
+    if (window.rBoard) rBoard.resize();
 }
 
 function switchTab(tabId) {
@@ -11,11 +12,20 @@ function switchTab(tabId) {
     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
     document.querySelectorAll('.view-section').forEach(view => view.classList.remove('active-view'));
 
-    if (evt && evt.target) evt.target.classList.add('active');
+    if (evt && evt.target) {
+        evt.target.classList.add('active');
+    } else {
+        const btn = document.querySelector(`button[onclick="switchTab('${tabId}')"]`);
+        if (btn) btn.classList.add('active');
+    }
+    
     document.getElementById(tabId + '-view').classList.add('active-view');
 
-    resizeAllBoards();
-    cancelPromotion();
+    // IMPORTANT FIX: 50ms timeout ensures 'display: block' applies before calculating board width
+    setTimeout(() => {
+        resizeAllBoards();
+        cancelPromotion();
+    }, 50);
 }
 
 window.addEventListener('resize', () => {
@@ -24,6 +34,7 @@ window.addEventListener('resize', () => {
 });
 
 const API_URL = 'https://stackbyujjwal1-stackchess.hf.space/calculate_move';
+const REVIEW_API_URL = 'https://stackbyujjwal1-stackchess.hf.space/review_move';
 const WS_URL = 'wss://stackbyujjwal1-stackchess.hf.space/ws/';
 const PIECE_THEME = 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png';
 window.lastTouch = 0;
@@ -32,7 +43,7 @@ window.lastTouch = 0;
 // UTILITIES
 // ==========================================
 function clearAllHighlights() {
-    $('.square-55d63').removeClass('highlight-blue highlight-red highlight-path');
+    $('.square-55d63').removeClass('highlight-blue highlight-red highlight-path highlight-best highlight-mistake highlight-blunder');
 }
 
 function copyPGN(gameInstance) {
@@ -92,9 +103,7 @@ async function fetchEvaluationBackground(fen, turn, whiteId, blackId) {
         const data = await response.json();
         const isMate = typeof data.score === 'string' && data.score.includes('Mate');
         updateEvalBar(data.score, isMate ? 'mate' : 'cp', turn, whiteId, blackId);
-    } catch (e) {
-        // silent fail
-    }
+    } catch (e) {}
 }
 
 // ==========================================
@@ -572,9 +581,7 @@ async function makeEngineMove() {
             pBoard.position(pGame.fen(), false);
             fetchEvaluationBackground(pGame.fen(), pGame.turn(), 'evalWhitePlay', 'evalBlackPlay');
         }
-    } catch (e) {
-        // silent fail
-    }
+    } catch (e) {}
 
     updateGameStatus();
 }
@@ -844,3 +851,149 @@ function exitRoom() {
 // Initial eval bar reset
 resetEvalBar('evalWhite', 'evalBlack');
 resetEvalBar('evalWhitePlay', 'evalBlackPlay');
+
+// ==========================================
+// TAB 4: GAME REVIEW LOGIC (CHESS.COM STYLE)
+// ==========================================
+var rBoard = null;
+var rGame = new Chess();
+var reviewHistory = [];
+var currentReviewIndex = -1;
+var isAnalyzing = false;
+
+var rConfig = {
+    draggable: false,
+    position: 'start',
+    pieceTheme: PIECE_THEME
+};
+
+// Start Review (Board is loaded exactly when tab is visible to avoid 0x0 size glitch)
+function startReview() {
+    const pgn = document.getElementById('pgnInput').value.trim();
+    if (!pgn) {
+        alert("Please paste a PGN first!");
+        return;
+    }
+    
+    rGame.reset();
+    const loaded = rGame.load_pgn(pgn);
+    if (!loaded) {
+        alert("Invalid PGN. Please check the text.");
+        return;
+    }
+    
+    reviewHistory = rGame.history({ verbose: true });
+    rGame.reset();
+    
+    // Board sirf tab initialize hoga jab PGN load ho jaye, width perfect ayegi!
+    if (!rBoard) {
+        rBoard = Chessboard('reviewBoard', rConfig);
+    }
+    rBoard.start();
+    
+    // Safety auto-resize
+    setTimeout(() => { rBoard.resize(); }, 10);
+    
+    currentReviewIndex = -1;
+    
+    document.getElementById('reviewControls').style.display = 'block';
+    document.getElementById('feedbackBox').style.borderLeftColor = "#64748b";
+    document.getElementById('moveQuality').innerText = "Game Loaded";
+    document.getElementById('moveQuality').style.color = "#0f172a";
+    document.getElementById('moveComment').innerText = `Total Moves: ${reviewHistory.length}. Click Next to start analyzing.`;
+    resetEvalBar('evalWhiteReview', 'evalBlackReview');
+    clearAllHighlights();
+}
+
+async function nextReviewMove() {
+    if (isAnalyzing || currentReviewIndex >= reviewHistory.length - 1) return;
+    isAnalyzing = true;
+    currentReviewIndex++;
+    
+    const movePlayed = reviewHistory[currentReviewIndex];
+    const fenBeforeMove = rGame.fen();
+    
+    // Execute player's move on board
+    rGame.move(movePlayed.san);
+    rBoard.position(rGame.fen());
+    
+    const btn = document.getElementById('nextMoveBtn');
+    btn.innerText = "Analyzing...";
+    btn.style.background = "#d97706";
+    
+    try {
+        // Evaluate position BEFORE player moved to find the engine's best move
+        const response = await fetch(REVIEW_API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fen_string: fenBeforeMove, think_time: 1 }) 
+        });
+        const data = await response.json();
+        
+        clearAllHighlights();
+        
+        const isMate = typeof data.score === 'string' && data.score.includes('Mate');
+        updateEvalBar(data.score, isMate ? 'mate' : 'cp', rGame.turn() === 'w' ? 'b' : 'w', 'evalWhiteReview', 'evalBlackReview');
+        
+        const engineBestMove = data.best_move; // Output format e.g. "e2e4"
+        const playedMoveCoords = movePlayed.from + movePlayed.to;
+        
+        const fbBox = document.getElementById('feedbackBox');
+        const qualityTitle = document.getElementById('moveQuality');
+        const comment = document.getElementById('moveComment');
+        
+        // --- CHESS.COM STYLE HIGHLIGHTING & FEEDBACK ---
+        
+        // Check if player found the top engine move
+        if (engineBestMove === playedMoveCoords || engineBestMove === playedMoveCoords + movePlayed.promotion) {
+            qualityTitle.innerText = "★ Best Move";
+            qualityTitle.style.color = "#81b64c"; // Green
+            fbBox.style.borderLeftColor = "#81b64c";
+            comment.innerHTML = `<strong>${movePlayed.san}</strong> is the best move! Excellent play.`;
+            
+            // Highlight the played move (Green)
+            $('#reviewBoard .square-' + movePlayed.from).addClass('highlight-best');
+            $('#reviewBoard .square-' + movePlayed.to).addClass('highlight-best');
+        } else {
+            qualityTitle.innerText = "✖ Inaccuracy / Mistake";
+            qualityTitle.style.color = "#e58f02"; // Orange
+            fbBox.style.borderLeftColor = "#e58f02";
+            
+            const bestFrom = engineBestMove.substring(0, 2);
+            const bestTo = engineBestMove.substring(2, 4);
+            
+            comment.innerHTML = `You played <strong>${movePlayed.san}</strong>.<br>The best engine move was <strong>${bestFrom} &rarr; ${bestTo}</strong>.`;
+            
+            // Highlight player's mistake (Orange)
+            $('#reviewBoard .square-' + movePlayed.from).addClass('highlight-mistake');
+            $('#reviewBoard .square-' + movePlayed.to).addClass('highlight-mistake');
+            
+            // Highlight what the engine wanted to do (Green)
+            $('#reviewBoard .square-' + bestFrom).addClass('highlight-best');
+            $('#reviewBoard .square-' + bestTo).addClass('highlight-best');
+        }
+        
+    } catch (e) {
+        document.getElementById('moveQuality').innerText = "Analysis Failed";
+        document.getElementById('moveComment').innerText = "Server error while evaluating this move.";
+    }
+    
+    isAnalyzing = false;
+    btn.innerText = "Next Move \u2192";
+    btn.style.background = "#2563eb";
+}
+
+function prevReviewMove() {
+    if (isAnalyzing || currentReviewIndex < 0) return;
+    
+    // Undo logic
+    rGame.undo();
+    rBoard.position(rGame.fen());
+    currentReviewIndex--;
+    clearAllHighlights();
+    
+    document.getElementById('moveQuality').innerText = "Move Undone";
+    document.getElementById('moveQuality').style.color = "#64748b";
+    document.getElementById('feedbackBox').style.borderLeftColor = "#64748b";
+    document.getElementById('moveComment').innerText = "Click Next to re-analyze.";
+}
